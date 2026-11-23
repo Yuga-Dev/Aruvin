@@ -166,7 +166,7 @@ function createRuntimeHarness(options?: {
     limits,
     currentConfig: { current: () => snapshot, revision: () => snapshot.revision },
     fetcher,
-    now: () => Date.parse('2026-10-06T12:00:00.000Z'),
+    now: () => Date.now(),
     memoryFirst: {
       policy: PROPOSED_MEMORY_TEXT_POLICY,
       save: async (e) => ({ kind: 'saved', epoch: e.epoch, sessionId: e.sessionId, version: e.version, fence: e.fence }),
@@ -406,23 +406,36 @@ describe('DurableChatRuntime async compaction & burst fallback', () => {
     });
     const memoryText = runtime['memoryOwners'].get('user-1')!;
     const turn0 = memoryText.foundation.find(sub0.sessionId, 'fold-0-xx')!;
-    const bulkyWeb = {
+    const bulkyGroup = {
+      ordinal: 0,
+      afterCalendarGroups: 0,
+      assistant: {
+        role: 'assistant' as const,
+        content: null,
+        tool_calls: [{ id: 'wt-1', type: 'function' as const, function: { name: 'web_tool' as const, arguments: '{"query":"big"}' } }] as const,
+      },
+      result: { role: 'tool' as const, tool_call_id: 'wt-1', name: 'web_tool' as const, content: JSON.stringify({ snippet: 'W'.repeat(900) }) },
+      sources: [],
+    };
+    const bulkyWeb: MemoryWebRecord = {
       schemaVersion: 1,
-      kind: 'memory-web',
+      kind: 'memory-web-native',
       userId: 'user-1',
       sessionId: sub0.sessionId,
       turnId: sub0.turnId,
       attemptId: sub0.attemptId,
-      groups: [{
-        assistant: {
-          role: 'assistant',
-          content: null,
-          tool_calls: [{ id: 'wt-1', type: 'function', function: { name: 'web_tool', arguments: '{"query":"big"}' } }],
-        },
-        results: [{ role: 'tool', tool_call_id: 'wt-1', content: JSON.stringify({ snippet: 'W'.repeat(900) }) }],
-      }],
-      state: { sources: [], activities: [] },
-    } as unknown as MemoryWebRecord;
+      epoch: turn0.epoch,
+      version: turn0.contextVersion + 1,
+      fence: turn0.fence,
+      state: {
+        schemaVersion: 1, userId: 'user-1', sessionId: sub0.sessionId, turnId: sub0.turnId,
+        acceptedAtMonotonic: 0, runDeadlineAt: 1, webDeadlineAt: 1,
+        limits: { maxSearchesPerTurn: 1, maxFetchesPerTurn: 1 }, advertised: true,
+        counters: { searchesUsed: 1, fetchesUsed: 0, schemaRepairsUsed: 0, modelAttemptsUsed: 1, evidenceBytes: 0 },
+        groups: [bulkyGroup], activities: [], sources: [], dispatches: [],
+      },
+      groups: [bulkyGroup],
+    };
     memoryText.foundation.complete(turn0, {
       status: 'completed',
       content: 'Short answer 0',
