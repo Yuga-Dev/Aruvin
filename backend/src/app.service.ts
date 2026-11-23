@@ -48,10 +48,12 @@ import type { z } from 'zod';
 type CalendarStatusV2Response = z.infer<typeof calendarStatusV2ResponseSchema>;
 type OwnerCalendarAssembly = ReturnType<typeof createCalendarAssembly>;
 import { createCalendarAssembly } from './operations/calendar-assembly.js';
+import type { BudgetConfig } from './contracts/budgets.js';
 import {
   buildRuntimeSnapshot,
   composeRuntimeBudgets,
   defaultManageableSettings,
+  freshInstallSettings,
   validateManageableSettings,
 } from './platform/config/manageable-config.js';
 import {
@@ -1059,13 +1061,23 @@ export class AppService {
     this.current = snapshot;
     this.devMode.setEnabled(snapshot?.settings.devModeEnabled === true);
   }
+  /**
+   * Active snapshots carry floor-checked budgets. Before activation (no stored
+   * revision, or a pointer that failed to load) the bootstrap placeholder
+   * cannot hold the fixed assets, so the runtime admits against the same
+   * asset-derived fresh-install floor the admin projection presents.
+   */
+  private runtimeBudgets(snapshot: PreparedRuntimeSnapshot | null, assets: FixedAssets): BudgetConfig {
+    if (snapshot !== null && snapshot !== this.unconfigured) return snapshot.budgets;
+    return composeRuntimeBudgets(freshInstallSettings(assets), this.bootstrap.safety);
+  }
   private createRuntime(assets: FixedAssets): ChatRuntime {
     const persistence = this.store();
     const snapshot = this.current;
     const assembler = new ReferencedContextAssembler({
       memory: persistence.memory, messages: persistence.messages,
       metadata: persistence.metadata,
-      budgets: snapshot?.budgets ?? this.config.budgets, assets,
+      budgets: this.runtimeBudgets(snapshot, assets), assets,
     });
     return this.ports.runtime({
       config: this.config, persistence, assembler, assets,

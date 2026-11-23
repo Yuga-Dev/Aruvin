@@ -37,6 +37,7 @@ async function boot() {
   const auth = await authFixture(admittedAccount());
   Object.assign(f.bundle, { users: auth.users });
   const service = await AppService.create(bootstrap, { ...f.ports, authProvider: () => auth.provider });
+  await service.auth.prepare(SESSION_COOKIE);
   const previous = { NODE_ENV: process.env.NODE_ENV, FRONTEND_ORIGIN: process.env.FRONTEND_ORIGIN };
   process.env.NODE_ENV = 'development';
   process.env.FRONTEND_ORIGIN = FRONTEND;

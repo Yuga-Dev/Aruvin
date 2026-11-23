@@ -32,7 +32,7 @@ import { CredentialValidator } from '../../src/admin-config/credential-validatio
 import { document, at, secret } from '../admin-config/fixtures.js';
 import { calendarLimits } from '../model/calendar-fixtures.js';
 import { calendarFixture as runtimeCalendarFixture } from '../runtime/calendar-runtime.fixture.js';
-import { admittedAccount, authFixture } from '../auth/fixtures.js';
+import { admittedAccount, authFixture, SESSION_COOKIE } from '../auth/fixtures.js';
 import { assemblyFixture } from './admin-config-fixture.js';
 
 const FRONTEND = 'http://127.0.0.1:5173';
@@ -173,6 +173,7 @@ export async function assembledCalendarApp(init: AssembledCalendarInit = {}) {
     instructions: 'src/instructions/system.md', knowledge: '../product_knowledge.md',
   });
   const service = await Service.create(bootstrap, f.ports);
+  await service.auth.prepare(SESSION_COOKIE);
   await service.calendarFor(USER).connections.statusV2();
   return {
     bootstrap, f, service, cal, close, fetcher: cal.fetcher,
