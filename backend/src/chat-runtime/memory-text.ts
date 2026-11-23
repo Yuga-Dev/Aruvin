@@ -923,7 +923,8 @@ export class MemoryText {
     return turns.sort((a, b) => a.sourceRange.fromSequence - b.sourceRange.fromSequence);
   }
 
-  private scheduleCompactionIfNeeded(sessionId: string, snapshot: RuntimeConfigSnapshot, force = false): void {
+  private scheduleCompactionIfNeeded(sessionId: string, snapshot: RuntimeConfigSnapshot, force = false,
+    forcedTailTurns = 3): void {
     const settings = snapshot.settings.compaction;
     if (!settings?.enabled || !this.foundation.has(sessionId)) return;
     const cold = this.sessions.get(sessionId);
@@ -941,10 +942,10 @@ export class MemoryText {
     if (!force && utilization < watermark) return;
     const pinned = new Set<string>();
     if (cold.pendingProposal?.originatingTurnId) pinned.add(cold.pendingProposal.originatingTurnId);
-    // A forced pass is the burst fallback: the normal recency floor already
-    // failed to fit, so compact down to the minimum verbatim tail (one turn).
+    // A forced pass drops the token-target tail and keeps exactly
+    // `forcedTailTurns` verbatim (default 3; the overflow fallback passes 1).
     const cut = selectCompactionCutpoint(turns, snapshot.budgets.maxHistoryTokens, force
-      ? { minTailTurns: 1, pinnedTurnIds: pinned, targetTailTokens: 0 }
+      ? { minTailTurns: forcedTailTurns, pinnedTurnIds: pinned, targetTailTokens: 0 }
       : { minTailTurns: 3, pinnedTurnIds: pinned });
     if (!cut) return;
     if (!cold.session.ephemeral) this.runtime.userMemoryScheduler?.compacting(this.ownerId, sessionId);
@@ -2106,7 +2107,9 @@ export class MemoryText {
         const pending = cold.compaction?.running;
         if (pending) await refreshAfterWait(pending);
         if (!pending || !fitsNative()) {
-          this.scheduleCompactionIfNeeded(c.sessionId, snapshot, true);
+          // Burst fallback: the normal route already failed to fit, so this single
+          // forced pass compacts down to the physical floor of one verbatim turn.
+          this.scheduleCompactionIfNeeded(c.sessionId, snapshot, true, 1);
           const running = cold.compaction?.running;
           if (running && running !== pending) await refreshAfterWait(running);
           preflightNative(); // Throws the current exact budget error if still too large.
