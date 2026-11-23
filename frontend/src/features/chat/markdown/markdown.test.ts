@@ -221,3 +221,91 @@ describe('SafeMarkdown link presentation', () => {
     expect(html).not.toContain('3:5.Here');
   });
 });
+
+describe('GFM tables', () => {
+  const table = '| Name | Qty | Note |\n| :--- | ---: | :---: |\n| **Apple** | 3 | a \\| b |\n| Pear | 1 |';
+
+  it('parses header, alignment, escaped pipes, and pads ragged rows', () => {
+    expect(parseMarkdown(table)).toEqual([{
+      type: 'table',
+      align: ['left', 'right', 'center'],
+      header: ['Name', 'Qty', 'Note'],
+      rows: [['**Apple**', '3', 'a | b'], ['Pear', '1', '']],
+    }]);
+    const truncated = parseMarkdown('a | b\n-|-\n1 | 2 | 3');
+    expect(truncated[0]).toMatchObject({ type: 'table', rows: [['1', '2']] });
+  });
+
+  it('ends at a blank line and leaves a lone pipe line as a paragraph', () => {
+    const tokens = parseMarkdown('| a |\n|---|\n| 1 |\n\nafter');
+    expect(tokens.map((t) => t.type)).toEqual(['table', 'paragraph']);
+    expect(parseMarkdown('| a | b |')).toEqual([{ type: 'paragraph', text: '| a | b |' }]);
+  });
+
+  it('renders semantic markup in a scroll wrapper with safe inline cells', () => {
+    const html = renderToStaticMarkup(createElement(SafeMarkdown, {
+      content: `${table}\n| \`x\` | [ok](https://example.com) [bad](javascript:alert(1)) | <b>raw</b> |`,
+    }));
+    expect(html).toContain('class="aurvin-table-wrap"');
+    expect(html).toContain('<thead>');
+    expect(html).toContain('<tbody>');
+    expect(html).toContain('<th scope="col" style="text-align:right">Qty</th>');
+    expect(html).toContain('<strong>Apple</strong>');
+    expect(html).toContain('<code>x</code>');
+    expect(html).toContain('href="https://example.com"');
+    expect(html.toLowerCase()).not.toContain('javascript:');
+    expect(html).toContain('&lt;b&gt;raw&lt;/b&gt;');
+  });
+});
+
+describe('nested lists', () => {
+  it('nests by 2 spaces, 4 spaces, or tab and mixes list types', () => {
+    for (const indent of ['  ', '    ', '\t']) {
+      const [list] = parseMarkdown(`- a\n${indent}1. b\n${indent}2. c\n- d`);
+      expect(list).toMatchObject({ type: 'bullet_list' });
+      const items = (list as Extract<ReturnType<typeof parseMarkdown>[number], { type: 'bullet_list' }>).items;
+      expect(items.map((i) => i.text)).toEqual(['a', 'd']);
+      expect(items[0]?.children[0]).toMatchObject({
+        type: 'ordered_list', items: [{ text: 'b' }, { text: 'c' }],
+      });
+    }
+  });
+
+  it('keeps the start number, loose items, continuation paragraphs, and code', () => {
+    const tokens = parseMarkdown('3. one\n\n   more text\n\n   ```js\n   x()\n   ```\n\n4. two');
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0]).toMatchObject({ type: 'ordered_list', start: 3 });
+    const items = (tokens[0] as { items: Array<{ text: string; children: unknown[] }> }).items;
+    expect(items.map((i) => i.text)).toEqual(['one', 'two']);
+    expect(items[0]?.children).toEqual([
+      { type: 'paragraph', text: 'more text' },
+      { type: 'code_block', lang: 'js', code: 'x()' },
+    ]);
+    const html = renderToStaticMarkup(createElement(SafeMarkdown, { content: '3. one\n   - sub\n4. two' }));
+    expect(html).toContain('<ol class="aurvin-list" start="3"><li>one<ul class="aurvin-list"><li>sub</li></ul></li><li>two</li></ol>');
+  });
+
+  it('caps depth with plain paragraphs instead of unbounded recursion', () => {
+    const deep = Array.from({ length: 12 }, (_, i) => `${'  '.repeat(i)}- L${i}`).join('\n');
+    expect(() => renderToStaticMarkup(createElement(SafeMarkdown, { content: deep }))).not.toThrow();
+    expect(renderToStaticMarkup(createElement(SafeMarkdown, { content: deep }))).toContain('L11');
+  });
+});
+
+describe('streaming partial tables and lists', () => {
+  it('never throws on any prefix of table and nested-list text', () => {
+    const doc = '- a\n  - b\n\t1. c\n\n| h1 | h2 |\n|:--|--:|\n| 1 | 2 \\| 3 |\n- z';
+    for (let n = 0; n <= doc.length; n++) {
+      const partial = doc.slice(0, n);
+      expect(() => parseMarkdown(partial)).not.toThrow();
+      expect(() => renderToStaticMarkup(createElement(SafeMarkdown, { content: partial }))).not.toThrow();
+    }
+  });
+
+  it('shows a half-received delimiter row as a header-only table', () => {
+    expect(parseMarkdown('| a | b |\n|---|-')[0]).toMatchObject({
+      type: 'table', header: ['a', 'b'], rows: [], align: [null, null],
+    });
+    expect(parseMarkdown('- a\n  - ')[0]).toMatchObject({ type: 'bullet_list' });
+  });
+});

@@ -8,7 +8,8 @@
  *    Render parsed Markdown tokens as sanitized React elements.
  *
  * ROLE IN PROJECT:
- *    Converts assistant transcript text into headings, lists, code, and links
+ *    Converts assistant transcript text into headings, nested lists, tables,
+ *    code, and links
  *    without dangerouslySetInnerHTML, disarming unsafe URI schemes as it goes.
  *
  * KEY COMPONENTS:
@@ -22,7 +23,7 @@ import {
   CanvasArtifactCard,
 } from '../../canvas/index.ts';
 import { prepareCanvasMarkdown } from '../../canvas/canvas-artifacts.ts';
-import type { MarkdownToken } from './parse-markdown.ts';
+import type { MarkdownListItem, MarkdownToken } from './parse-markdown.ts';
 import { sanitizeUrl } from './sanitize-url.ts';
 
 const MATH_SYMBOLS: Record<string, string> = {
@@ -448,6 +449,17 @@ export function SafeMarkdown({
   );
 }
 
+function renderListItems(items: MarkdownListItem[]): ReactNode {
+  return items.map((item, itemIdx) => (
+    <li key={itemIdx}>
+      {renderInlineText(item.text)}
+      {item.children.map((child, childIdx) => (
+        <MarkdownTokenContent key={childIdx} token={child} idx={childIdx} />
+      ))}
+    </li>
+  ));
+}
+
 // Prefix token identity survives stream appends. Keep inline/math rendering out
 // of artifact selection and callback updates, which do not change prose content.
 const MarkdownTokenContent = memo(function MarkdownTokenContent({ token, idx }: {
@@ -477,16 +489,37 @@ const MarkdownTokenContent = memo(function MarkdownTokenContent({ token, idx }: 
     case 'blockquote':
       return <blockquote className="aurvin-blockquote">{renderInlineText(token.text)}</blockquote>;
     case 'bullet_list':
-      return (
-        <ul className="aurvin-list">
-          {token.items.map((item, itemIdx) => <li key={itemIdx}>{renderInlineText(item)}</li>)}
-        </ul>
-      );
+      return <ul className="aurvin-list">{renderListItems(token.items)}</ul>;
     case 'ordered_list':
       return (
-        <ol className="aurvin-list">
-          {token.items.map((item, itemIdx) => <li key={itemIdx}>{renderInlineText(item)}</li>)}
-        </ol>
+        <ol className="aurvin-list" start={token.start}>{renderListItems(token.items)}</ol>
+      );
+    case 'table':
+      return (
+        <div className="aurvin-table-wrap" role="region" aria-label="Table" tabIndex={0}>
+          <table className="aurvin-table">
+            <thead>
+              <tr>
+                {token.header.map((cell, col) => (
+                  <th key={col} scope="col" style={{ textAlign: token.align[col] ?? undefined }}>
+                    {renderInlineText(cell)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {token.rows.map((row, rowIdx) => (
+                <tr key={rowIdx}>
+                  {row.map((cell, col) => (
+                    <td key={col} style={{ textAlign: token.align[col] ?? undefined }}>
+                      {renderInlineText(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       );
     case 'paragraph':
     default:
