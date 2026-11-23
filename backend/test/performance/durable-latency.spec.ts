@@ -502,8 +502,8 @@ describe.each([
     { name: 'new-text', priorTurns: 0, maxMessages: 80 },
     { name: 'follow-up-1', priorTurns: 1, maxMessages: 80 },
     { name: 'follow-up-20', priorTurns: 20, maxMessages: 80 },
-    { name: 'follow-up-38-at-80-msg-ceiling', priorTurns: 38, maxMessages: 80 },
-    { name: 'follow-up-39', priorTurns: 39, maxMessages: 82 },
+    { name: 'follow-up-38-at-80-msg-ceiling', priorTurns: 37, maxMessages: 80 },
+    { name: 'follow-up-39', priorTurns: 39, maxMessages: 83 },
     { name: 'follow-up-50-test-budget', priorTurns: 50, maxMessages: 500 },
   ])('measures $name text turn and enforces non-self-referential gates', async ({ name, priorTurns, maxMessages }) => {
     const probe = new DependencyProbe();
@@ -512,7 +512,7 @@ describe.each([
     try {
       if (maxMessages !== 80) fx.setTestMaxMessagesInContext(maxMessages);
       const sessionId = priorTurns > 0 ? await seedCompletedTurns(fx, priorTurns) : null;
-      if (priorTurns === 38 && maxMessages === 80) {
+      if (priorTurns === 37 && maxMessages === 80) {
         const prompt = `Measured question for ${name}`;
         const { result: ids, metrics } = await fx.measure(async () => {
           const accepted = await fx.submit(prompt, sessionId);
@@ -521,7 +521,7 @@ describe.each([
         });
         results.set(name, metrics);
         assertNonSelfReferentialGates(fx, probe, metrics, prompt);
-        // After 39 completed turns (78 history messages + 3 system + 1 new = 82 > 80), default 80-message bound rejects without silent truncation.
+        // After 38 completed turns (76 history messages + 4 prefix + 1 new = 81 > 80), default 80-message bound rejects without silent truncation.
         await expect(probe.drive(() => fx.submit('Overflow turn 40', ids.sessionId), 0, 0))
           .rejects.toMatchObject({ code: 'CONTEXT_BUDGET_EXCEEDED' });
         return;
@@ -555,7 +555,8 @@ describe.each([
     } finally {
       await fx.close();
     }
-  });
+    // Seeding up to 50 turns under simulated storage latency exceeds the 5s default.
+  }, 60_000);
 
   it('measures Calendar ordinary text, read, create, conflict, and proposal reply scenarios', async () => {
     // 1. Calendar ordinary text

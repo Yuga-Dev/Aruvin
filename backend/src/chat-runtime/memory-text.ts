@@ -941,11 +941,11 @@ export class MemoryText {
     if (!force && utilization < watermark) return;
     const pinned = new Set<string>();
     if (cold.pendingProposal?.originatingTurnId) pinned.add(cold.pendingProposal.originatingTurnId);
-    const cut = selectCompactionCutpoint(turns, snapshot.budgets.maxHistoryTokens, {
-      minTailTurns: 3, pinnedTurnIds: pinned,
-    }) ?? (force ? selectCompactionCutpoint(turns, snapshot.budgets.maxHistoryTokens, {
-      minTailTurns: 3, pinnedTurnIds: pinned, targetTailTokens: 0,
-    }) : null);
+    // A forced pass is the burst fallback: the normal recency floor already
+    // failed to fit, so compact down to the minimum verbatim tail (one turn).
+    const cut = selectCompactionCutpoint(turns, snapshot.budgets.maxHistoryTokens, force
+      ? { minTailTurns: 1, pinnedTurnIds: pinned, targetTailTokens: 0 }
+      : { minTailTurns: 3, pinnedTurnIds: pinned });
     if (!cut) return;
     if (!cold.session.ephemeral) this.runtime.userMemoryScheduler?.compacting(this.ownerId, sessionId);
     const abort = new AbortController();

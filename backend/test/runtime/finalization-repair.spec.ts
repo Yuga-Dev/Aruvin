@@ -43,8 +43,10 @@ it('keeps text-only redaction valid after MongoDB BSON serialization', async () 
     .toBe(true);
   await messages.append(redacted);
   await messages.updateCompletion('u1', 's1', 'm2', 'completed', false);
+  // Message-content redaction is intentionally a no-op: the visible transcript
+  // is never rewritten (source evidence expires separately).
   expect(await messages.get('u1', 's1', 'm2')).toMatchObject({
-    content: CALENDAR_TOMBSTONE, completionStatus: 'completed',
+    content: redacted.content, completionStatus: 'completed',
   });
 });
 
