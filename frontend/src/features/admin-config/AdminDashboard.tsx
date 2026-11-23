@@ -5,7 +5,7 @@
  * ============================================================================
  *
  * PURPOSE:
- *    Load/save orchestration for the Config, Plugins, and empty Analytics dashboard.
+ *    Load/save orchestration for the Config, Plugins, Analytics, and Administration dashboard.
  *
  * ROLE IN PROJECT:
  *    Owns admin page state, section/tab navigation, unsaved-exit guards, and
@@ -21,6 +21,7 @@ import { useCallback, useEffect, useId, useReducer, useRef, useState, type Keybo
 import type { AdminConfigClient } from '../../api/admin-config-client.ts';
 import { AdminConfigClientError } from '../../api/admin-config-client.ts';
 import { createAdministrationClient, type AdministrationClient } from '../../api/administration-client.ts';
+import { createAnalyticsClient } from '../../api/analytics-client.ts';
 import type {
   AdminConfigError,
   AdminConfigFieldPath,
@@ -49,6 +50,7 @@ import { MEMORY_CARD_ELEMENT_ID } from '../personalization/MemoryCard.tsx';
 import { PersonalizationPanel } from '../personalization/index.ts';
 import { GoogleCalendarPanel } from '../plugins/google-calendar/index.ts';
 import { WebSearchPanel } from '../plugins/web-search/WebSearchPanel.tsx';
+import { AnalyticsPanel } from './AnalyticsPanel.tsx';
 import { AdministrationPanel } from './AdministrationPanel.tsx';
 import { ConfigFields, fieldDomId } from './ConfigFields.tsx';
 import { DevModeControls } from './DevModeControls.tsx';
@@ -262,6 +264,7 @@ export function AdminDashboard({
   );
   const [defaultCalendarClient] = useState(() => createCalendarClient());
   const [defaultAdministrationClient] = useState(() => createAdministrationClient());
+  const [analyticsClient] = useState(() => createAnalyticsClient());
   const [defaultWebSearchClient] = useState(() => createWebSearchClient());
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [webSearchBusy, setWebSearchBusy] = useState(false);
@@ -943,7 +946,9 @@ export function AdminDashboard({
             role="tabpanel"
             aria-labelledby={`${ids}-analytics-tab`}
             hidden={tab !== 'analytics'}
-          />
+          >
+            {tab === 'analytics' && !isStandardUser ? <AnalyticsPanel client={analyticsClient} /> : null}
+          </div>
 
           <div
             id={`${ids}-administration-panel`}

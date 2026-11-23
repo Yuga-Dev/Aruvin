@@ -26,6 +26,7 @@
 
 import { resolve } from 'node:path';
 import type { SessionRepository, MessageRepository } from './contracts/repositories.js';
+import type { AccountingQuery } from './contracts/accounting-reporting.js';
 import { AppError } from './platform/errors/app-error.js';
 import type { AurvinConfig } from './platform/config/load-config.js';
 import type { BootstrapConfig } from './platform/config/bootstrap-config.js';
@@ -727,6 +728,9 @@ export class AppService {
     const service = new AppService(bootstrap, ports);
     await service.initialize();
     return service;
+  }
+  adminAccountingTotals(query: AccountingQuery) {
+    return this.store().metadata.accountingTotals(query);
   }
   adminActor(): AdminConfigActor {
     return this.identities.adminActor();

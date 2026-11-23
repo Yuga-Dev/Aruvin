@@ -31,6 +31,7 @@ import { ChatHttpModule } from './http/index.js';
 import { OperationsModule } from './operations/index.js';
 import { AdminConfigModule } from './admin-config/index.js';
 import { AuthModule } from './auth/index.js';
+import { AdminAnalyticsModule } from './admin-analytics/admin-analytics.module.js';
 import { AdministrationModule } from './administration/administration.module.js';
 import { PersonalizationModule } from './personalization/index.js';
 import { VoiceGateway } from './voice/transport/voice.gateway.js';
@@ -66,6 +67,10 @@ class AssemblyModule {}
     AdministrationModule.registerAsync({ imports: [AssemblyModule], inject: [AppService],
       useFactory: (service: AppService) => ({ service: service.administration,
         principal: () => service.identities.principal() }) }),
+    AdminAnalyticsModule.registerAsync({ imports: [AssemblyModule], inject: [AppService],
+      useFactory: (service: AppService) => ({ report: q => service.adminAccountingTotals(q),
+        principal: () => service.identities.principal(),
+        pageSize: Math.min(50, service.config.budgets.maxPageSize) }) }),
     PersonalizationModule.registerAsync({ imports: [AssemblyModule], inject: [AppService],
       useFactory: (service: AppService) => ({ service: service.personalization,
         userId: () => service.identities.resolve().userId,
