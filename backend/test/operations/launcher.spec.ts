@@ -85,7 +85,7 @@ describe.skipIf(process.platform !== 'win32')('launcher batch behavior', () => {
       await writeFile(join(dir, 'bin/powershell.cmd'),
         `@echo off\r\necho liveness>>"${log}"\r\nexit /b 1\r\n`);
       const result = await new Promise<{ code: number; stdout: string }>((resolve, reject) => {
-        execFile(process.env.ComSpec ?? 'cmd.exe', ['/d', '/c', 'run.bat'], {
+        execFile(process.env.ComSpec ?? 'cmd.exe', ['/d', '/c', '.\\run.bat'], {
           cwd: dir, timeout: 10_000, windowsHide: true,
           env: { ...process.env, PATH: `${join(dir, 'bin')};${process.env.PATH ?? ''}` },
         }, (error, stdout) => {

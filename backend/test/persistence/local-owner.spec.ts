@@ -145,6 +145,6 @@ it('includes owner-only leftovers and preserves that filter when advancing a bou
   const first=await sessions.listForRecovery('u1',{ limit:1,cursor:null });
   expect(first.items[0].execution).toMatchObject({ ownerId:'previous',activeAttemptId:null });
   await sessions.listForRecovery('u1',{ limit:1,cursor:first.nextCursor });
-  expect(find.mock.calls[1][0].$or).toEqual([{ 'execution.activeAttemptId':{ $ne:null } },{ 'execution.ownerId':{ $ne:null } }]);
+  expect(find.mock.calls[1][0].$or).toEqual([{ 'execution.activeAttemptId':{ $ne:null } },{ 'execution.ownerId':{ $ne:null } },{ memoryPublication:{ $exists:true } }]);
   expect(find.mock.calls[1][0].$and).toHaveLength(1);
 });

@@ -30,7 +30,8 @@ import { chunk, done, FRAMES, usage } from '../fixtures/openrouter/frames.js';
 import { calendarBinding, calendarLimits, skillRequest } from './calendar-fixtures.js';
 import { collect, config, limits, request, response, seed, sink } from './helpers.js';
 
-const seedRoutingId = 'aurvin-c97ee719b602026b2cee407b294b0e79a2593f047eff6de370950686e2fea7e0';
+// Independently pinned: 'aurvin-' + sha256(JSON.stringify(['aurvin-dev-user','sess_fixture'])), computed outside production code.
+const seedRoutingId = 'aurvin-799702a455993d6746cd0f8bb97d87b6ebfaf2f0469216e80311ff4c26cef9ea';
 
 afterEach(() => vi.unstubAllEnvs());
 
