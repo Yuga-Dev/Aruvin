@@ -33,8 +33,13 @@ it('memory voice publishes an agenda frame and archives the same view with inter
     await f.execute(ids);
     const frame = f.frames.find(frame => frame.event.type === 'calendar-view');
     expect(frame?.event).toMatchObject({ type: 'calendar-view', view: { kind: 'agenda', entries: [] } });
-    const messages = await f.h.p.messages.listForContext(f.h.identity.userId, ids.sessionId, { cursor: null, limit: 20 });
-    const assistant = messages.items.find(m => m.role === 'assistant' && m.turnId === ids.turnId);
+    // Memory-first: the turn archive is written asynchronously after the response.
+    let assistant: Awaited<ReturnType<typeof f.h.p.messages.listForContext>>['items'][number] | undefined;
+    await vi.waitFor(async () => {
+      const messages = await f.h.p.messages.listForContext(f.h.identity.userId, ids.sessionId, { cursor: null, limit: 20 });
+      assistant = messages.items.find(m => m.role === 'assistant' && m.turnId === ids.turnId);
+      expect(assistant).toBeDefined();
+    });
     expect(assistant).toMatchObject({ visibility: 'internal', mode: 'live', voiceSessionId: 'calendar-voice-unit',
       calendarView: frame?.event.type === 'calendar-view' ? frame.event.view : undefined });
     expect(f.spoken.join('')).toBe('No events in that range.');
