@@ -1,0 +1,44 @@
+/**
+ * ============================================================================
+ * FILE: voice-limits.ts
+ * LOCATION: backend/src/contracts/voice-limits.ts
+ * ============================================================================
+ *
+ * PURPOSE:
+ *    Dependency-free voice session limit defaults and runtime guard.
+ *
+ * ROLE IN PROJECT:
+ *    Mirrors frontend/src/api/voice-limits.ts and is re-exported by the voice wire
+ *    contract. Kept free of imports so the browser AudioWorklet capture processor
+ *    can share the exact same bounded contract without pulling in other modules.
+ *
+ * KEY COMPONENTS:
+ *    - VoiceLimits: Bounded session/capture limits shared with the browser.
+ *    - DEFAULT_VOICE_LIMITS: Default limits for every voice session.
+ *    - isVoiceLimits: Strict shape and ordering guard.
+ * ============================================================================
+ */
+
+export type VoiceLimits = {
+  dictationMaxMs: number; liveMaxMs: number; liveWarningMs: number;
+  idleWarningMs: number; idleExitAfterWarningMs: number;
+  finalizationMs: number; reconnectMs: number; connectMs: number;
+  inputQueueMs: number; outputQueueMs: number;
+};
+export const DEFAULT_VOICE_LIMITS: Readonly<VoiceLimits> = Object.freeze({
+  dictationMaxMs: 300000, liveMaxMs: 1200000, liveWarningMs: 1080000,
+  idleWarningMs: 60000, idleExitAfterWarningMs: 30000, finalizationMs: 2000,
+  reconnectMs: 10000, connectMs: 10000, inputQueueMs: 1000, outputQueueMs: 2000,
+});
+const LIMIT_KEYS = Object.keys(DEFAULT_VOICE_LIMITS);
+
+export function isVoiceLimits(value: unknown): value is VoiceLimits {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const limits = value as Record<string, unknown>;
+  if (Object.keys(limits).length !== LIMIT_KEYS.length ||
+      !LIMIT_KEYS.every(key => Object.hasOwn(limits, key) && Number.isInteger(limits[key]) &&
+        (limits[key] as number) > 0 && (limits[key] as number) <= 0xffffffff)) return false;
+  const v = value as VoiceLimits;
+  return v.liveWarningMs < v.liveMaxMs && v.finalizationMs <= v.dictationMaxMs &&
+    v.inputQueueMs <= v.dictationMaxMs && v.outputQueueMs <= v.liveMaxMs;
+}

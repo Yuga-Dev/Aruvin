@@ -1,0 +1,11 @@
+node_modules/
+dist/
+results/
+audio/
+*.pcm
+*.wav
+*.local.json
+*-result.json
+*.log
+.env
+.env.*

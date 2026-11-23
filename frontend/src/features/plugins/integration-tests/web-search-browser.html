@@ -1,0 +1,23 @@
+<!--
+============================================================================
+FILE: web-search-browser.html
+LOCATION: frontend/src/features/plugins/integration-tests/web-search-browser.html
+PURPOSE: Run deterministic Web Search plugin checks in a real browser.
+ROLE IN PROJECT: Development-only harness; not an application route or service proof.
+KEY COMPONENTS: Named result regions and the fixture module entry.
+============================================================================
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web Search integration fixture</title>
+  </head>
+  <body>
+    <p id="fixture-status" role="status">Running</p>
+    <ol id="fixture-checks"></ol>
+    <div id="root"></div>
+    <script type="module" src="./web-search-browser.tsx"></script>
+  </body>
+</html>

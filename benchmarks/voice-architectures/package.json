@@ -1,0 +1,43 @@
+{
+  "name": "voice-architecture-benchmark",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "corpus:generate": "powershell.exe -NoProfile -File shared/make-corpus.ps1",
+    "bench": "node dist/shared/cli.js",
+    "bench:aurvin": "node dist/shared/cli.js --candidate=aurvin",
+    "bench:livekit-agents": "node dist/shared/cli.js --candidate=livekit-agents",
+    "bench:deepgram-agent": "node dist/shared/cli.js --candidate=deepgram-agent",
+    "bench:compile": "node dist/shared/cli.js --compile-only"
+  },
+  "dependencies": {
+    "@livekit/agents": "1.10.0",
+    "@livekit/agents-plugin-deepgram": "1.10.0",
+    "@livekit/agents-plugin-openai": "1.10.0",
+    "@livekit/agents-plugin-silero": "1.10.0",
+    "@livekit/rtc-node": "1.2.2",
+    "livekit-server-sdk": "2.19.2",
+    "mongodb": "6.21.0",
+    "openai": "6.8.1",
+    "ws": "8.22.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "24.0.0",
+    "@types/ws": "8.5.14",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  },
+  "allowScripts": {
+    "onnxruntime-node@1.24.3": true,
+    "@livekit/blingfire@1.2.0": true,
+    "@livekit/local-inference@0.3.1": true
+  }
+}

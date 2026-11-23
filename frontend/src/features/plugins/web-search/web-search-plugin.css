@@ -1,0 +1,209 @@
+/**
+ * ============================================================================
+ * FILE: web-search-plugin.css
+ * LOCATION: frontend/src/features/plugins/web-search/web-search-plugin.css
+ * ============================================================================
+ *
+ * PURPOSE:
+ *    Responsive styles for the Plugins -> Web Search settings cards and badges.
+ *
+ * ROLE IN PROJECT:
+ *    Reuses admin-config surface tokens and provides clean card hierarchy,
+ *    readable metadata rows, and accessible wrapping across viewports.
+ *
+ * KEY COMPONENTS:
+ *    - .aurvin-web-plugin / .aurvin-web-disclosure / .aurvin-web-global-card
+ *    - .aurvin-web-provider-card / .aurvin-web-state-pill / .aurvin-web-key-form
+ * ============================================================================
+ */
+
+.aurvin-web-plugin {
+  display: grid;
+  gap: 16px;
+}
+
+.aurvin-web-disclosure {
+  padding: 14px 18px;
+  border: 1px solid var(--aurvin-border);
+  border-radius: 12px;
+  background: var(--aurvin-admin-card-bg, rgba(255, 255, 255, 0.03));
+}
+
+.aurvin-web-disclosure p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--aurvin-text-secondary);
+}
+
+.aurvin-web-global-card,
+.aurvin-web-provider-card {
+  padding: 20px 22px;
+  border: 1px solid var(--aurvin-border);
+  border-radius: 14px;
+  background: var(--aurvin-admin-card-bg, rgba(255, 255, 255, 0.03));
+  display: grid;
+  gap: 12px;
+}
+
+.aurvin-web-global-card .aurvin-admin-help {
+  margin: 0;
+}
+
+.aurvin-web-provider-list {
+  display: grid;
+  gap: 14px;
+}
+
+.aurvin-web-provider-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+}
+
+.aurvin-web-priority {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--aurvin-text-secondary);
+}
+
+.aurvin-web-provider-title {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--aurvin-text-primary);
+}
+
+.aurvin-web-state-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--aurvin-border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--aurvin-text-secondary);
+}
+
+.aurvin-web-state-connected {
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.25);
+  background: rgba(52, 211, 153, 0.1);
+}
+
+.aurvin-web-state-invalid-key,
+.aurvin-web-state-reconnect-required {
+  color: var(--aurvin-danger);
+  border-color: rgba(248, 113, 113, 0.3);
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.aurvin-web-compatibility-note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--aurvin-text-secondary);
+}
+
+.aurvin-web-meta-row,
+.aurvin-web-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.aurvin-web-capabilities {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--aurvin-text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--aurvin-border);
+}
+
+.aurvin-web-validated {
+  font-family: var(--aurvin-mono);
+  font-size: 11.5px;
+  color: var(--aurvin-text-secondary);
+}
+
+.aurvin-web-console-link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.aurvin-web-console-link::after {
+  content: '↗';
+  font-size: 11px;
+  opacity: 0.72;
+}
+
+.aurvin-web-card-actions {
+  padding-top: 4px;
+}
+
+.aurvin-admin .aurvin-web-disconnect-btn:hover:not(:disabled) {
+  color: var(--aurvin-danger);
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.aurvin-web-key-form {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--aurvin-border);
+}
+
+.aurvin-web-key-form label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--aurvin-text-primary);
+}
+
+.aurvin-web-key-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.aurvin-web-key-controls input {
+  flex: 1 1 220px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--aurvin-border);
+  background: var(--aurvin-admin-field-bg, #111111);
+  color: var(--aurvin-text-primary);
+  font-family: var(--aurvin-mono);
+  font-size: 13.5px;
+}
+
+.aurvin-web-key-controls input:focus {
+  outline: none;
+  border-color: var(--aurvin-admin-border-hover, rgba(255, 255, 255, 0.35));
+}
+
+@media (max-width: 600px) {
+  .aurvin-web-key-controls button,
+  .aurvin-web-card-actions button,
+  .aurvin-web-console-link {
+    width: 100%;
+    justify-content: center;
+  }
+}
