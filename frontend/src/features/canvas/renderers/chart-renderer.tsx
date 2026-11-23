@@ -201,6 +201,7 @@ function renderPieChart(model: ChartModel) {
               key={`slice-${idx}`}
               d={pathData}
               fill={item.color}
+              fillOpacity={idx >= CHART_PALETTE.length ? 0.6 : 1}
               stroke="var(--aurvin-canvas-bg, #111214)"
               strokeWidth="2.5"
             />
@@ -222,7 +223,7 @@ function renderPieChart(model: ChartModel) {
             <g key={`leg-${idx}`} transform={`translate(0, ${idx * 32})`}>
               <rect x={0} y={-11} width={14} height={14} rx={4} fill={item.color} />
               <text x={24} y={0} className="aurvin-canvas-legend-label">
-                {item.label}
+                {item.label.length > 26 ? `${item.label.slice(0, 25)}…` : item.label}
               </text>
               <text x={245} y={0} textAnchor="end" className="aurvin-canvas-legend-value">
                 {formatNumber(item.value)} ({pct}%)

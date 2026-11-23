@@ -84,6 +84,12 @@ function measureNode(node: MermaidNode): { width: number; height: number; lines:
   if (node.shape === 'state-start' || node.shape === 'state-end') {
     return { width: 28, height: 28, lines: [] };
   }
+  if (node.shape === 'state-bar') {
+    return { width: 72, height: 12, lines: [] };
+  }
+  if (node.shape === 'diamond' && !node.label.trim()) {
+    return { width: 36, height: 36, lines: [] };
+  }
   const maxWrap = node.shape === 'diamond' ? 20 : node.shape === 'circle' ? 16 : 24;
   const lines = wrapNodeLabel(node.label, maxWrap);
   const maxLineLen = Math.max(4, ...lines.map((l) => l.length));
@@ -108,6 +114,40 @@ function measureNode(node: MermaidNode): { width: number; height: number; lines:
   return { width, height, lines };
 }
 
+/** Drops edges that close a cycle (found by DFS from roots) so ranking sees a DAG. */
+function forwardEdges<E extends { from: string; to: string }>(ids: string[], edges: E[]): E[] {
+  const out = new Map<string, E[]>();
+  const hasIncoming = new Set<string>();
+  for (const e of edges) {
+    const list = out.get(e.from) ?? [];
+    list.push(e);
+    out.set(e.from, list);
+    hasIncoming.add(e.to);
+  }
+  const state = new Map<string, 1 | 2>();
+  const back = new Set<E>();
+  const visit = (root: string) => {
+    const stack: Array<{ id: string; i: number }> = [{ id: root, i: 0 }];
+    state.set(root, 1);
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1]!;
+      const next = out.get(top.id)?.[top.i++];
+      if (!next) {
+        state.set(top.id, 2);
+        stack.pop();
+      } else if (state.get(next.to) === 1) {
+        back.add(next);
+      } else if (!state.has(next.to)) {
+        state.set(next.to, 1);
+        stack.push({ id: next.to, i: 0 });
+      }
+    }
+  };
+  for (const id of ids) if (!hasIncoming.has(id) && !state.has(id)) visit(id);
+  for (const id of ids) if (!state.has(id)) visit(id);
+  return edges.filter((e) => !back.has(e));
+}
+
 function layoutNodeGroup(
   groupNodes: MermaidNode[],
   allEdges: MermaidEdge[],
@@ -118,8 +158,10 @@ function layoutNodeGroup(
   nodes: Map<string, PositionedNode>;
 } {
   const memberIds = new Set(groupNodes.map((n) => n.id));
-  const internalEdges = allEdges.filter(
-    (e) => e.from !== e.to && memberIds.has(e.from) && memberIds.has(e.to),
+  // Back edges (cycles such as retry loops) must not inflate ranks.
+  const internalEdges = forwardEdges(
+    groupNodes.map((n) => n.id),
+    allEdges.filter((e) => e.from !== e.to && memberIds.has(e.from) && memberIds.has(e.to)),
   );
 
   const ranks = new Map<string, number>();
@@ -464,20 +506,19 @@ function layoutFlowchart(model: MermaidFlowModel): {
   const clusterRank = new Map<string, number>();
   for (const c of clusters) clusterRank.set(c.clusterId, 0);
 
+  const clusterEdges = forwardEdges(
+    clusters.map((c) => c.clusterId),
+    model.edges.flatMap((edge) => {
+      const from = nodeToCluster.get(edge.from);
+      const to = nodeToCluster.get(edge.to);
+      return from && to && from !== to ? [{ from, to }] : [];
+    }),
+  );
   for (let pass = 0; pass < clusters.length; pass++) {
-    for (const edge of model.edges) {
-      const fromC = nodeToCluster.get(edge.from);
-      const toC = nodeToCluster.get(edge.to);
-      if (!fromC || !toC || fromC === toC) continue;
-      const targetCluster = clusterMap.get(toC);
-      if (!targetCluster) continue;
-
-      if (!targetCluster.hasIndependentRoot) {
-        const candidate = Math.min(clusters.length, (clusterRank.get(fromC) ?? 0) + 1);
-        if (candidate > (clusterRank.get(toC) ?? 0)) {
-          clusterRank.set(toC, candidate);
-        }
-      }
+    for (const { from, to } of clusterEdges) {
+      if (clusterMap.get(to)?.hasIndependentRoot) continue;
+      const candidate = (clusterRank.get(from) ?? 0) + 1;
+      if (candidate > (clusterRank.get(to) ?? 0)) clusterRank.set(to, candidate);
     }
   }
 
@@ -600,6 +641,19 @@ function renderNodeShape(node: PositionedNode) {
           className="aurvin-canvas-node-state-start"
         />
       </g>
+    );
+  }
+
+  if (shape === 'state-bar') {
+    return (
+      <rect
+        x={x - halfW}
+        y={y - halfH}
+        width={w}
+        height={h}
+        rx={3}
+        className="aurvin-canvas-node-state-start"
+      />
     );
   }
 
@@ -1136,6 +1190,19 @@ export function MermaidRenderer({
       );
     }
     return renderSequenceSvg(parsed);
+  }
+
+  if (parsed.kind === 'unsupported') {
+    return (
+      <div className="aurvin-canvas-fallback">
+        <p className="aurvin-canvas-fallback-note">
+          {parsed.diagramType} diagrams are not rendered in Canvas yet. Source shown below; use Copy to paste it into a Mermaid viewer.
+        </p>
+        <pre className="aurvin-canvas-fallback-code">
+          <code>{source}</code>
+        </pre>
+      </div>
+    );
   }
 
   if (parsed.nodes.length === 0) {

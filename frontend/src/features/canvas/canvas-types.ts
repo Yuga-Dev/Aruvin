@@ -105,7 +105,8 @@ export type MermaidNodeShape =
   | 'cylinder'
   | 'subroutine'
   | 'state-start'
-  | 'state-end';
+  | 'state-end'
+  | 'state-bar';
 
 export type MermaidNode = {
   id: string;
@@ -170,4 +171,5 @@ export type MermaidSequenceModel = {
 export type MermaidParsedModel =
   | MermaidFlowModel
   | MermaidSequenceModel
-  | { kind: 'chart'; chart: ChartModel };
+  | { kind: 'chart'; chart: ChartModel }
+  | { kind: 'unsupported'; diagramType: string; title?: string };
