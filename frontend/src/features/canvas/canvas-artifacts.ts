@@ -42,6 +42,7 @@ import type {
   MermaidEdge,
   MermaidEdgeStyle,
   MermaidFlowDirection,
+  MermaidFlowModel,
   MermaidNode,
   MermaidNodeShape,
   MermaidParsedModel,
@@ -50,7 +51,7 @@ import type {
 } from './canvas-types.ts';
 
 const MERMAID_HEADER_RE =
-  /^(?:---\s*\n[\s\S]*?\n---\s*\n\s*)?(?:flowchart|graph|sequenceDiagram|stateDiagram(?:-v2)?|classDiagram|erDiagram|pie|xychart-beta|quadrantChart|gantt|mindmap)\b/i;
+  /^(?:---\s*\n[\s\S]*?\n---\s*\n\s*)?(?:flowchart|graph|sequenceDiagram|stateDiagram(?:-v2)?|classDiagram|erDiagram|pie|xychart-beta|quadrantChart|gantt|mindmap|journey|timeline|gitGraph)\b/i;
 
 export function preprocessCanvasTags(markdown: string): string {
   if (!markdown.includes('<aurvin-canvas')) {
@@ -580,13 +581,16 @@ export function parseChartSource(
         title = tMatch[1].trim().replace(/^["']|["']$/g, '');
         continue;
       }
-      const entryMatch = /^["']?([^"':]+)["']?\s*:\s*(-?\d+(?:\.\d+)?)$/.exec(line);
-      if (entryMatch?.[1] && entryMatch[2]) {
-        labels.push(entryMatch[1].trim());
-        values.push(Number(entryMatch[2]));
+      const entryMatch =
+        /^(?:"([^"]+)"|'([^']+)'|([^"':]+?))\s*:\s*(-?(?:\d+(?:\.\d+)?|\.\d+))\s*$/.exec(line);
+      const entryLabel = (entryMatch?.[1] ?? entryMatch?.[2] ?? entryMatch?.[3])?.trim();
+      if (entryLabel && entryMatch?.[4]) {
+        labels.push(entryLabel);
+        values.push(Math.max(0, Number(entryMatch[4])));
       }
     }
-    if (labels.length > 0) {
+    // A pie with no positive slice has nothing to draw; let the caller show the source.
+    if (labels.length > 0 && values.some((v) => v > 0)) {
       return {
         type: 'pie',
         title,
@@ -594,6 +598,8 @@ export function parseChartSource(
         datasets: [{ label: title ?? 'Share', data: values }],
       };
     }
+    // Never reinterpret a pie header through the generic text parsers below.
+    return null;
   }
 
   if (/^quadrantChart\b/i.test(first)) {
@@ -1392,6 +1398,7 @@ function isRenderableProjectionSource(projection: CanvasArtifactProjection): boo
     if (!MERMAID_HEADER_RE.test(trimmed)) return false;
     const parsed = parseMermaidSource(trimmed, projection.title);
     if (parsed.kind === 'chart') return parsed.chart.datasets.length > 0;
+    if (parsed.kind === 'unsupported') return true;
     if (parsed.kind === 'sequence') {
       return parsed.participants.length > 0 || parsed.items.length > 0;
     }
@@ -1844,16 +1851,206 @@ function parseSequenceDiagram(body: string, fallbackTitle?: string): MermaidSequ
   };
 }
 
+const KNOWN_UNSUPPORTED_MERMAID_TYPE_RE =
+  /^(classDiagram(?:-v2)?|erDiagram|gantt|journey|mindmap|timeline|gitGraph|requirementDiagram|C4(?:Context|Container|Component|Dynamic|Deployment)|sankey(?:-beta)?|block(?:-beta)?|packet(?:-beta)?|architecture(?:-beta)?|kanban|radar(?:-beta)?|treemap(?:-beta)?|zenuml)\b/i;
+
+/**
+ * Parses stateDiagram / stateDiagram-v2 into the flowchart model. Composite
+ * states become subgraphs; unsupported lines are ignored rather than thrown on.
+ */
+function parseStateDiagram(body: string, fallbackTitle?: string): MermaidFlowModel {
+  const lines = body
+    .split('\n')
+    .map((l) => l.replace(/\s%%.*$/, '').trim())
+    .filter(Boolean);
+  const unquote = (s: string) => s.trim().replace(/^["']|["']$/g, '');
+  const nodes = new Map<string, MermaidNode>();
+  const subgraphs: MermaidSubgraph[] = [];
+  const composites = new Map<string, MermaidSubgraph>();
+  const parentOf = new Map<string, string | undefined>();
+  const edges: MermaidEdge[] = [];
+  const scope: string[] = [];
+  let direction: MermaidFlowDirection = 'TD';
+  let title = fallbackTitle;
+  let noteCount = 0;
+  let inNote: { target: string; text: string[] } | null = null;
+  const compositeIds = new Set(
+    lines.flatMap((l) => {
+      const m = /^state\s+(?:"[^"]+"\s+as\s+([\w.-]+)|([\w.-]+)(?:\s+as\s+"[^"]+")?)\s*\{\s*$/i.exec(l);
+      return m ? [(m[1] ?? m[2])!] : [];
+    }),
+  );
+  const current = () => scope[scope.length - 1];
+
+  const ensure = (id: string, patch: Partial<MermaidNode> = {}) => {
+    const existing = nodes.get(id);
+    const owner = existing?.subgraphId ?? current();
+    nodes.set(id, {
+      id,
+      label: patch.label ?? existing?.label ?? id,
+      shape: patch.shape ?? existing?.shape ?? 'rounded',
+      subgraphId: owner,
+    });
+    if (!existing?.subgraphId && owner) composites.get(owner)?.nodeIds.push(id);
+  };
+  const endpoint = (token: string, isTarget: boolean): string => {
+    if (token === '[*]') {
+      const id = `${isTarget ? '__end' : '__start'}_${current() ?? 'root'}`;
+      if (!nodes.has(id)) ensure(id, { label: '', shape: isTarget ? 'state-end' : 'state-start' });
+      return id;
+    }
+    if (!compositeIds.has(token)) ensure(token);
+    return token;
+  };
+  const addNote = (target: string, text: string) => {
+    if (!text.trim()) return;
+    const anchor = endpoint(target, false);
+    const id = `__note_${++noteCount}`;
+    ensure(id, { label: text.trim(), shape: 'rect' });
+    edges.push({ from: anchor, to: id, style: 'open' });
+  };
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (inNote) {
+      if (/^end\s+note\b/i.test(line)) {
+        addNote(inNote.target, inNote.text.join(' '));
+        inNote = null;
+      } else {
+        inNote.text.push(line);
+      }
+      continue;
+    }
+    if (line === '}') {
+      scope.pop();
+      continue;
+    }
+    if (line === '--') continue;
+    const dir = /^direction\s+(TD|TB|BT|LR|RL)\b/i.exec(line);
+    if (dir?.[1]) {
+      if (scope.length === 0) direction = dir[1].toUpperCase() as MermaidFlowDirection;
+      continue;
+    }
+    const titleLine = /^title\s*:?\s+(.+)$/i.exec(line);
+    if (titleLine?.[1]) {
+      title = unquote(titleLine[1]);
+      continue;
+    }
+    const noteMulti = /^note\s+(?:left|right)\s+of\s+([^\s:]+)\s*$/i.exec(line);
+    if (noteMulti?.[1]) {
+      inNote = { target: noteMulti[1], text: [] };
+      continue;
+    }
+    const noteOne = /^note\s+(?:left|right)\s+of\s+([^\s:]+)\s*:\s*(.*)$/i.exec(line);
+    if (noteOne?.[1]) {
+      addNote(noteOne[1], noteOne[2] ?? '');
+      continue;
+    }
+    const special = /^state\s+(?:"[^"]+"\s+as\s+)?([\w.-]+)\s*<<\s*(choice|fork|join)\s*>>\s*$/i.exec(line);
+    if (special?.[1] && special[2]) {
+      ensure(special[1], {
+        label: '',
+        shape: special[2].toLowerCase() === 'choice' ? 'diamond' : 'state-bar',
+      });
+      continue;
+    }
+    const decl =
+      /^state\s+(?:"([^"]+)"\s+as\s+([\w.-]+)|([\w.-]+)\s+as\s+"([^"]+)"|([\w.-]+))\s*(\{)?\s*$/i.exec(line);
+    if (decl) {
+      const label = decl[1] ?? decl[4];
+      const id = decl[2] ?? decl[3] ?? decl[5]!;
+      if (decl[6]) {
+        const sg: MermaidSubgraph = { id, title: label ?? id, nodeIds: [] };
+        subgraphs.push(sg);
+        composites.set(id, sg);
+        parentOf.set(id, current());
+        scope.push(id);
+      } else {
+        ensure(id, label ? { label } : {});
+      }
+      continue;
+    }
+    const tr = /^(\[\*\]|[\w.-]+)\s*-->\s*(\[\*\]|[\w.-]+)\s*(?::\s*(.*))?$/.exec(line);
+    if (tr?.[1] && tr[2]) {
+      const from = endpoint(tr[1], false);
+      const to = endpoint(tr[2], true);
+      const label = tr[3]?.trim();
+      edges.push({ from, to, style: 'solid', ...(label ? { label } : {}) });
+      continue;
+    }
+    const desc = /^([\w.-]+)\s*:\s*(.+)$/.exec(line);
+    if (desc?.[1] && desc[2] && !compositeIds.has(desc[1])) {
+      const existing = nodes.get(desc[1]);
+      const base = existing?.label ?? desc[1];
+      ensure(desc[1], { label: `${base}\n${unquote(desc[2])}` });
+    }
+  }
+
+  // Redirect edges touching composite states to a node inside them; an empty
+  // composite degrades to a plain node.
+  const within = (sgId: string): MermaidNode[] =>
+    Array.from(nodes.values()).filter((n) => {
+      let cur = n.subgraphId;
+      while (cur) {
+        if (cur === sgId) return true;
+        cur = parentOf.get(cur);
+      }
+      return false;
+    });
+  const resolve = (id: string, asSource: boolean): string => {
+    if (!composites.has(id)) return id;
+    const inside = within(id);
+    const pick = asSource
+      ? inside.find((n) => n.shape === 'state-end' && n.subgraphId === id) ?? inside[inside.length - 1]
+      : inside.find((n) => n.shape === 'state-start' && n.subgraphId === id) ?? inside[0];
+    return pick?.id ?? id;
+  };
+  for (const [id, sg] of Array.from(composites.entries())) {
+    if (within(id).length > 0) continue;
+    const parent = parentOf.get(id);
+    nodes.set(id, { id, label: sg.title, shape: 'rounded', subgraphId: parent });
+    if (parent) composites.get(parent)?.nodeIds.push(id);
+    composites.delete(id);
+  }
+
+  return {
+    kind: 'flowchart',
+    title,
+    direction,
+    nodes: Array.from(nodes.values()),
+    edges: edges.map((e) => ({ ...e, from: resolve(e.from, true), to: resolve(e.to, false) })),
+    subgraphs: subgraphs.filter((sg) => composites.has(sg.id)),
+  };
+}
+
 export function parseMermaidSource(raw: string, fallbackTitle?: string): MermaidParsedModel {
   const { title: fmTitle, body } = stripFrontmatterAndComments(raw);
   const lines = body.split('\n').map((l) => l.trim()).filter(Boolean);
   const firstLine = lines[0] ?? '';
+
+  if (/^stateDiagram(?:-v2)?\b/i.test(firstLine)) {
+    return parseStateDiagram(body, fmTitle ?? fallbackTitle);
+  }
+
+  const unsupported = KNOWN_UNSUPPORTED_MERMAID_TYPE_RE.exec(firstLine);
+  if (unsupported?.[1]) {
+    return { kind: 'unsupported', diagramType: unsupported[1], title: fmTitle ?? fallbackTitle };
+  }
 
   if (/^(?:pie|xychart-beta|quadrantChart)\b/i.test(firstLine)) {
     const chart = parseChartSource(raw, fmTitle ?? fallbackTitle);
     if (chart) {
       return { kind: 'chart', chart };
     }
+    // No drawable data yet (streaming, or all values <= 0): empty model -> source fallback.
+    return {
+      kind: 'flowchart',
+      title: fmTitle ?? fallbackTitle,
+      direction: 'TD',
+      nodes: [],
+      edges: [],
+      subgraphs: [],
+    };
   }
 
   if (/^sequenceDiagram\b/i.test(firstLine)) {
