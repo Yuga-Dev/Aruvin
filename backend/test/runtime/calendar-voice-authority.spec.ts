@@ -17,7 +17,7 @@
  * ============================================================================
  */
 
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { calendarLiveFixture } from './calendar-live.fixture.js';
 import { loadWire, createWire } from './calendar-runtime.fixture.js';
 import { event } from './calendar-multi-fixture.js';
@@ -32,6 +32,11 @@ it.each(['memory', 'durable'] as const)('%s voice rejects a stale revision and e
     await f.execute(stale);
     expect(f.h.effects.filter(e => e.kind === 'create')).toHaveLength(0);
     expect(await f.h.currentProposal(first.sessionId)).toMatchObject({ proposalId: p.proposalId, state: 'pending' });
+    // Memory-first archives asynchronously; admission refuses a stale dirty backlog, so settle saves before moving the clock.
+    await vi.waitFor(async () => {
+      const { items } = await f.h.p.messages.listForContext(f.h.identity.userId, first.sessionId, { cursor: null, limit: 50 });
+      expect(items.filter(m => m.role === 'assistant' && m.turnId === stale.turnId)).toHaveLength(1);
+    });
     f.h.advance(600001);
     const expired = await f.submit('yes', { proposalId: p.proposalId, revision: p.revision });
     await f.execute(expired);

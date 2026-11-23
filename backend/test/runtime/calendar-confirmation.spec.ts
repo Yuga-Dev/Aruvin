@@ -208,7 +208,7 @@ it.each([
       expect(h.frames.some(frame => frame.event.type === 'calendar-clarification'
         && frame.event.proposalRevision === proposal!.revision)).toBe(true);
       expect(visibleText(h)).toContain('Ball');
-      for (const value of ['Saturday, October 31, 2026', '4:00 PM', '7:00 PM', ball.description!, ball.location!, 'Personal']) {
+      for (const value of ['Saturday, October 31, 2026', '4:00 PM', '7:00 PM', ball.description!, ball.location!, 'your primary calendar']) {
         expect(visibleText(h)).toContain(value);
       }
       expect(visibleText(h)).not.toContain(ball.start);

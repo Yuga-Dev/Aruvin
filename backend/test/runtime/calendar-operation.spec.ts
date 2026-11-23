@@ -40,6 +40,9 @@ const action = calendarInputSchemas.calendar_create_event.parse({
   end: '2026-10-22T11:00:00+00:00', timeZone: 'Etc/UTC',
 });
 const request = 'Schedule Planning on 2026-10-22 from 10:00 to 11:00 Etc/UTC.';
+// Audit window is relative to the real clock: the v2 create authority rejects an expired audit window.
+const AUDIT_CREATED_AT = new Date().toISOString();
+const AUDIT_EXPIRES_AT = new Date(Date.now() + 29 * 86_400_000).toISOString();
 
 async function harness() {
   const h = calendarFixture();
@@ -109,7 +112,7 @@ describe('Calendar create entry point', () => {
         intent: x.intent, account: x.account, target: x.target, accepted: x.accepted,
         proposal: null, consumption: null, action: x.canonical, requestHash: x.requestHash,
         operationId: x.operationId, decisionId: 'decision-create', toolCallId: 'call-create',
-        createdAt: '2026-10-24T10:00:00.000Z', auditExpiresAt: '2026-11-23T10:00:00.000Z',
+        createdAt: AUDIT_CREATED_AT, auditExpiresAt: AUDIT_EXPIRES_AT,
       });
       expect(outcome.outcome).toBe('created');
       const saved = await x.h.p.calendarOperationsV2.getByIntent(x.h.identity.userId, x.ids.sessionId, x.intent.intentId);
@@ -138,7 +141,7 @@ describe('Calendar create entry point', () => {
         account: x.account, target: x.target, accepted: x.accepted,
         proposal: null, consumption: null, action: x.canonical, requestHash: x.requestHash,
         operationId: x.operationId, decisionId: 'decision-create', toolCallId: 'call-create',
-        createdAt: '2026-10-24T10:00:00.000Z', auditExpiresAt: '2026-11-23T10:00:00.000Z',
+        createdAt: AUDIT_CREATED_AT, auditExpiresAt: AUDIT_EXPIRES_AT,
       })).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
       expect(x.h.effects.filter(e => e.kind === 'create')).toHaveLength(0);
     } finally { await x.h.dispose(); }
@@ -153,7 +156,7 @@ describe('Calendar create entry point', () => {
         action: { ...x.canonical, summary: 'Other' },
         requestHash: x.requestHash,
         operationId: x.operationId, decisionId: 'decision-create', toolCallId: 'call-create',
-        createdAt: '2026-10-24T10:00:00.000Z', auditExpiresAt: '2026-11-23T10:00:00.000Z',
+        createdAt: AUDIT_CREATED_AT, auditExpiresAt: AUDIT_EXPIRES_AT,
       })).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
       expect(x.h.effects.filter(e => e.kind === 'create')).toHaveLength(0);
     } finally { await x.h.dispose(); }
@@ -166,14 +169,14 @@ describe('Calendar create entry point', () => {
         intent: x.intent, account: x.account, target: x.target, accepted: x.accepted,
         proposal: null, consumption: null, action: x.canonical, requestHash: x.requestHash,
         operationId: x.operationId, decisionId: 'decision-create', toolCallId: 'call-create',
-        createdAt: '2026-10-24T10:00:00.000Z', auditExpiresAt: '2026-11-23T10:00:00.000Z',
+        createdAt: AUDIT_CREATED_AT, auditExpiresAt: AUDIT_EXPIRES_AT,
       });
       expect(first.outcome).toBe('created');
       const second = await x.writer.executeCreate({
         intent: x.intent, account: x.account, target: x.target, accepted: x.accepted,
         proposal: null, consumption: null, action: x.canonical, requestHash: x.requestHash,
         operationId: x.operationId, decisionId: 'decision-create', toolCallId: 'call-create',
-        createdAt: '2026-10-24T10:00:00.000Z', auditExpiresAt: '2026-11-23T10:00:00.000Z',
+        createdAt: AUDIT_CREATED_AT, auditExpiresAt: AUDIT_EXPIRES_AT,
       });
       expect(second.outcome).toBe('existing');
       expect(x.h.effects.filter(e => e.kind === 'create')).toHaveLength(1);
@@ -191,7 +194,7 @@ describe('Calendar create entry point', () => {
         intent: x.intent, account: x.account, target: x.target, accepted: x.accepted,
         proposal: null, consumption: null, action: x.canonical, requestHash: x.requestHash,
         operationId: x.operationId, decisionId: 'decision-create', toolCallId: 'call-create',
-        createdAt: '2026-10-24T10:00:00.000Z', auditExpiresAt: '2026-11-23T10:00:00.000Z',
+        createdAt: AUDIT_CREATED_AT, auditExpiresAt: AUDIT_EXPIRES_AT,
         capability: async () => ({ outcome: 'ok', target: x.target }),
         preflight: async () => null,
       })).rejects.toThrow('Crash before dispatching');
@@ -203,7 +206,7 @@ describe('Calendar create entry point', () => {
         intent: x.intent, account: x.account, target: x.target, accepted: x.accepted,
         proposal: null, consumption: null, action: x.canonical, requestHash: x.requestHash,
         operationId: x.operationId, decisionId: 'decision-create', toolCallId: 'call-create',
-        createdAt: '2026-10-24T10:00:00.000Z', auditExpiresAt: '2026-11-23T10:00:00.000Z',
+        createdAt: AUDIT_CREATED_AT, auditExpiresAt: AUDIT_EXPIRES_AT,
         capability: async () => { capCalls++; return { outcome: 'ok', target: { ...x.target, targetRevision: x.target.targetRevision + 1 } }; },
         preflight: async () => null,
       });
@@ -217,7 +220,7 @@ describe('Calendar create entry point', () => {
         intent: x.intent, account: x.account, target: x.target, accepted: x.accepted,
         proposal: null, consumption: null, action: x.canonical, requestHash: x.requestHash,
         operationId: x.operationId, decisionId: 'decision-create', toolCallId: 'call-create',
-        createdAt: '2026-10-24T10:00:00.000Z', auditExpiresAt: '2026-11-23T10:00:00.000Z',
+        createdAt: AUDIT_CREATED_AT, auditExpiresAt: AUDIT_EXPIRES_AT,
         capability: async () => ({ outcome: 'ok', target: x.target }),
         preflight: async () => {
           preflightCalls++;
@@ -243,7 +246,7 @@ describe('Calendar create entry point', () => {
         intent: x.intent, account: x.account, target: x.target, accepted: x.accepted,
         proposal: null, consumption: null, action: x.canonical, requestHash: x.requestHash,
         operationId: x.operationId, decisionId: 'decision-create', toolCallId: 'call-create',
-        createdAt: '2026-10-24T10:00:00.000Z', auditExpiresAt: '2026-11-23T10:00:00.000Z',
+        createdAt: AUDIT_CREATED_AT, auditExpiresAt: AUDIT_EXPIRES_AT,
         capability: async () => { okCap++; return { outcome: 'ok', target: x.target }; },
         preflight: async () => { okPre++; return null; },
       });
@@ -263,7 +266,7 @@ describe('Calendar create entry point', () => {
         intent: x.intent, account: x.account, target: x.target, accepted: x.accepted,
         proposal: null, consumption: null, action: x.canonical, requestHash: x.requestHash,
         operationId: x.operationId, decisionId: 'decision-create', toolCallId: 'call-create',
-        createdAt: '2026-10-24T10:00:00.000Z', auditExpiresAt: '2026-11-23T10:00:00.000Z',
+        createdAt: AUDIT_CREATED_AT, auditExpiresAt: AUDIT_EXPIRES_AT,
       })).rejects.toThrow('Crash before dispatching');
       vi.restoreAllMocks();
       const reserved = await x.h.p.calendarOperationsV2.getByIntent(x.h.identity.userId, x.ids.sessionId, x.intent.intentId);
@@ -277,7 +280,7 @@ describe('Calendar create entry point', () => {
         proposal: null, consumption: null, action: changed,
         requestHash: calendarActionHash(changed),
         operationId: x.operationId, decisionId: 'decision-create', toolCallId: 'call-create',
-        createdAt: '2026-10-24T10:00:00.000Z', auditExpiresAt: '2026-11-23T10:00:00.000Z',
+        createdAt: AUDIT_CREATED_AT, auditExpiresAt: AUDIT_EXPIRES_AT,
       })).rejects.toMatchObject({ code: 'IDEMPOTENCY_PAYLOAD_MISMATCH' });
       expect(x.h.effects.filter(e => e.kind === 'create')).toHaveLength(0);
       expect(await x.h.p.calendarOperationsV2.getByIntent(x.h.identity.userId, x.ids.sessionId, x.intent.intentId))
@@ -303,7 +306,7 @@ describe('Calendar create entry point', () => {
         intent: x.intent, account: x.account, target: x.target, accepted: x.accepted,
         proposal: null, consumption: null, action: x.canonical, requestHash: x.requestHash,
         operationId: x.operationId, decisionId: 'decision-create', toolCallId: 'call-create',
-        createdAt: '2026-10-24T10:00:00.000Z', auditExpiresAt: '2026-11-23T10:00:00.000Z',
+        createdAt: AUDIT_CREATED_AT, auditExpiresAt: AUDIT_EXPIRES_AT,
       });
       expect(outcome.outcome).toBe('unknown');
       expect(appendSpy).not.toHaveBeenCalled();
