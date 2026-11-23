@@ -31,7 +31,7 @@ it('runs the built direct assembly with native initial repair continuation contr
   const h = await assembledCalendarApp({ compiled: true, realAssets: true, writeLog: line => { lines.push(line); } });
   try {
     const dependencies = vi.mocked(h.f.ports.runtime).mock.calls.at(-1)![0];
-    expect(dependencies.calendar!.execution).toBeInstanceOf(CalendarApiTools);
+    expect(dependencies.calendarFor!('aurvin-dev-user')!.execution).toBeInstanceOf(CalendarApiTools);
     h.cal.modelWires.push(loadWire(['calendar_list_calendars'], 'built-load'),
       callWire('calendar_list_calendars', { pageToken: 'first' }, 'built-bad-cursor'),
       callWire('calendar_list_calendars', {}, 'built-corrected'),

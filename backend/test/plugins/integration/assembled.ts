@@ -7,7 +7,7 @@ import { configureApplication } from '../../../src/main.js';
 import { AURVIN_CONFIG } from '../../../src/platform/tokens.js';
 import { assemblyFixture } from '../../assembly/admin-config-fixture.js';
 import { assembledCalendarApp } from '../../assembly/calendar-fixture.js';
-import { admittedAccount, authFixture } from '../../auth/fixtures.js';
+import { admittedAccount, authFixture, SESSION_COOKIE } from '../../auth/fixtures.js';
 
 export const FRONTEND_ORIGIN = 'http://127.0.0.1:5173';
 export const BACKEND_ORIGIN = 'http://127.0.0.1:3000';
@@ -107,6 +107,7 @@ export async function openBlankAssembledCalendar(): Promise<AssembledCalendar> {
   const service = await AppService.create(fixture.bootstrap, {
     ...fixture.ports, authProvider: () => auth.provider,
   });
+  await service.auth.prepare(SESSION_COOKIE);
   const app = await boot(fixture.bootstrap, service);
   const frontendOrigin = service.config.frontendOrigin;
   const backendHost = `${new URL(frontendOrigin).hostname}:${service.config.port}`;

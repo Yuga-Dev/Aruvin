@@ -72,7 +72,7 @@ export class MutationJournal {
 }
 
 const mutations:Record<string,number>={ updateOne:2,replaceOne:2,findOneAndUpdate:2,bulkWrite:1,createIndex:1,deleteMany:1,deleteOne:1 };
-const collections=new Set(['sessions','messages','agent-memory','metadata','checkpoints','checkpoint_writes','integration_connections','users','user_personalization',COLLECTIONS.userMemory]);
+const collections=new Set(['sessions','messages','agent-memory','metadata','checkpoints','checkpoint_writes','integration_connections','users','user_personalization',COLLECTIONS.userMemory,COLLECTIONS.webSearchConnections]);
 const cursorMethods=new Set(['sort','limit','project','toArray','next','hasNext','close']);
 const unsupported=() => new AppError('UNSUPPORTED_TOPOLOGY','An unguarded database API is not admitted in local mode.');
 
