@@ -774,6 +774,48 @@
   padding-left: 1.4em;
 }
 
+.aurvin-list .aurvin-list {
+  margin: 0.25em 0;
+}
+
+.aurvin-list > li > p {
+  margin: 0.4em 0;
+}
+
+.aurvin-table-wrap {
+  margin: 0.9em 0;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--aurvin-border);
+  border-radius: 12px;
+}
+
+.aurvin-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: var(--aurvin-text-sm);
+}
+
+.aurvin-table th,
+.aurvin-table td {
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--aurvin-border);
+}
+
+.aurvin-table th {
+  background-color: var(--aurvin-surface-elevated);
+  color: var(--aurvin-text-primary);
+  font-weight: 600;
+  border-bottom-color: var(--aurvin-border-strong);
+}
+
+.aurvin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
 .aurvin-math {
   font-family: 'Cambria Math', 'STIX Two Math', 'Latin Modern Math', Georgia, serif;
 }

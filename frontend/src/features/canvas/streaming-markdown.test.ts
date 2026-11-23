@@ -62,6 +62,7 @@ describe('streaming Markdown preparation', () => {
       'Before\n```mermaid title="Flow"\nflowchart TD\nA-->B\n```\nAfter\n```chart\nA: 2\n```\n',
       'Before\n<aurvin-canvas type="chart"\n title="Data">\r\nA: 2\r\n</aurvin-canvas>\nAfter',
       '$$x\n+y\n$$\n\\[z\n+q\\]\n$$inline$$\n```text\nunclosed\n',
+      'Intro\n| a | b |\n|:-|-:|\n| 1 | 2 |\n| 3 |\n\nText\n- x\n  - y\n\t1. z\n- w\n',
       '- list\n```chart\nA: 1\n```\n<aurvin-canvas type="svg"><svg></svg></aurvin-canvas>',
     ];
     for (const [sourceIndex, source] of sources.entries()) {
