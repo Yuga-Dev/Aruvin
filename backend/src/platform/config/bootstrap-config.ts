@@ -56,6 +56,7 @@ export const WEATHER_BOOTSTRAP_ENV_NAMES = [
 
 export const BOOTSTRAP_ENV_NAMES = [
   'AURVIN_CONFIG_ENCRYPTION_KEY',
+  'AURVIN_DEV_SKIP_LOGIN',
   'AURVIN_EXECUTOR_TOPOLOGY',
   'AURVIN_LOCAL_CRASH_RECOVERY',
   'AURVIN_USER_ID',
@@ -145,6 +146,8 @@ export type EncryptionBootstrap =
 export type BootstrapConfig = {
   port: number; frontendOrigin: string; nodeEnv: 'development' | 'test' | 'production';
   identity: { userId: string };
+  /** Local-dev only: admit every request as the identity.userId account without a login. */
+  devSkipLogin?: boolean;
   persistence: { profile: PersistenceProfile; mongoUri: string; mongoDbName: string;
     documentHeadroomBytes: number };
   topology: { executor: 'single-process'; localCrashRecovery: boolean };
@@ -182,6 +185,7 @@ const bootstrapEnvSchema = z
     MONGODB_DB_NAME: z.string().min(1).default('aurvin'),
     AURVIN_EXECUTOR_TOPOLOGY: z.literal('single-process').default('single-process'),
     AURVIN_LOCAL_CRASH_RECOVERY: z.enum(['true', 'false']).default('false'),
+    AURVIN_DEV_SKIP_LOGIN: z.enum(['true', 'false', '']).default('false'),
     AURVIN_CONFIG_ENCRYPTION_KEY: z.string().optional(),
     MAX_MESSAGE_BYTES: optionalPositiveInt,
     MAX_DOCUMENT_BYTES: optionalPositiveInt,
@@ -319,6 +323,11 @@ export function loadBootstrapConfig(
     if (localCrashRecovery && profile !== 'native-mongodb') {
       throw new Error('local_requires_native');
     }
+    const devSkipLogin = data.AURVIN_DEV_SKIP_LOGIN === 'true';
+    // parseFrontendOrigin only admits http for loopback hosts in development; never HTTPS/staging.
+    if (devSkipLogin && (nodeEnv !== 'development' || !frontendOrigin.startsWith('http:'))) {
+      throw new Error('dev_skip_login_requires_local_development');
+    }
 
     const safety: StorageSafety = {
       maxMessageBytes: data.MAX_MESSAGE_BYTES ?? DEFAULT_BUDGETS.maxMessageBytes,
@@ -345,6 +354,7 @@ export function loadBootstrapConfig(
       frontendOrigin,
       nodeEnv,
       identity: { userId: data.AURVIN_USER_ID },
+      devSkipLogin,
       persistence: {
         profile,
         mongoUri: data.MONGODB_URI,

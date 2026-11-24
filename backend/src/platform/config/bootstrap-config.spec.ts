@@ -260,6 +260,16 @@ describe('loadBootstrapConfig', () => {
     for (const name of Object.keys(env)) expect(BOOTSTRAP_ENV_NAMES).toContain(name);
     expect(() => loadBootstrapConfig({ ...env, WORKOS_API_KEY: 'sk_fixture\n' })).toThrow();
   });
+
+  it('admits the dev login bypass only for loopback HTTP development', () => {
+    expect(loadBootstrapConfig({}).devSkipLogin).toBe(false);
+    expect(loadBootstrapConfig({ AURVIN_DEV_SKIP_LOGIN: 'true' }).devSkipLogin).toBe(true);
+    expect(() => loadBootstrapConfig({ AURVIN_DEV_SKIP_LOGIN: 'true', NODE_ENV: 'production',
+      FRONTEND_ORIGIN: 'https://aurvin.example' })).toThrow('Invalid application configuration.');
+    expect(() => loadBootstrapConfig({ AURVIN_DEV_SKIP_LOGIN: 'true',
+      FRONTEND_ORIGIN: 'https://aurvin.example' })).toThrow('Invalid application configuration.');
+    expect(() => loadBootstrapConfig({ AURVIN_DEV_SKIP_LOGIN: 'yes' })).toThrow();
+  });
 });
 
 describe('legacyConfigWarning', () => {
@@ -283,7 +293,7 @@ describe('configuration source map', () => {
     const bootstrap = new Set<string>(BOOTSTRAP_ENV_NAMES);
     const manageable = new Set<string>(LEGACY_MANAGEABLE_ENV_NAMES);
     expect(BOOTSTRAP_ENV_NAMES).toHaveLength(
-      21 + CALENDAR_BOOTSTRAP_ENV_NAMES.length + LIVEKIT_BOOTSTRAP_ENV_NAMES.length + WEATHER_BOOTSTRAP_ENV_NAMES.length,
+      22 + CALENDAR_BOOTSTRAP_ENV_NAMES.length + LIVEKIT_BOOTSTRAP_ENV_NAMES.length + WEATHER_BOOTSTRAP_ENV_NAMES.length,
     );
     for (const name of bootstrap) expect(manageable.has(name)).toBe(false);
     for (const name of [...CALENDAR_BOOTSTRAP_ENV_NAMES, ...LIVEKIT_BOOTSTRAP_ENV_NAMES, ...WEATHER_BOOTSTRAP_ENV_NAMES]) {

@@ -405,7 +405,8 @@ export class AppService {
       users: this.users, onSessionFence: subject => this.devMode.invalidate(subject),
     });
     this.devMode = new DevModeAuthority(accounts);
-    this.auth = new AuthService({ users: this.users, provider: this.authProvider, authority: accounts });
+    this.auth = new AuthService({ users: this.users, provider: this.authProvider, authority: accounts,
+      devLoginUserId: bootstrap.devSkipLogin ? bootstrap.identity.userId : null });
     const cipher = new WebSearchSecretCipher(bootstrap.encryption);
     const mcp = new McpWebClient({ fetch: this.ports.fetcher });
     this.webSearchConnections = new WebSearchConnections({
@@ -722,7 +723,7 @@ export class AppService {
       },
       voiceSnapshot: () => this.voiceUsage.snapshot(),
       calendarSnapshot: () => this.calendarHealthSnapshot(),
-      authenticationReady: () => this.authProvider !== null && this.persistence !== null,
+      authenticationReady: () => (this.authProvider !== null || this.bootstrap.devSkipLogin === true) && this.persistence !== null,
     }, this.telemetry);
   }
 

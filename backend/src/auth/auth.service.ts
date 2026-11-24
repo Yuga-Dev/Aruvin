@@ -46,10 +46,15 @@ function parse<T>(schema: ZodType<T, ZodTypeDef, unknown>, body: unknown): T {
 export type AuthServiceOptions = {
   users: UsersRepository; provider: AuthProvider | null;
   authority?: AccountAuthorityPort; now?: () => Date;
+  /** Local-dev login bypass: admit every request as this existing account's userId. Config refuses it outside loopback development. */
+  devLoginUserId?: string | null;
 };
+/** Synthetic session bound to the dev account, so downstream session checks see an ordinary admitted session. */
+export const DEV_LOGIN_SESSION_ID = 'aurvin-dev-skip-login';
 export class AuthService {
   readonly authority: AccountAuthorityPort;
   private readonly limiter = new AttemptLimiter();
+  private devSubject: string | null = null;
   constructor(private readonly o: AuthServiceOptions) {
     this.authority = o.authority ?? new AccountAuthority({ users: o.users });
   }
@@ -99,7 +104,32 @@ export class AuthService {
     }
     return { user: publicUser(saved.account), sealedSession: session.sealedSession };
   }
+  /** Bind the dev account to DEV_LOGIN_SESSION_ID (one CAS, like login) and refresh its authority snapshot. */
+  private async devBind(): Promise<string> {
+    const local = await this.o.users.get(this.o.devLoginUserId!);
+    if (!local || local.account.status !== 'active') throw new AuthFault('UNAUTHENTICATED');
+    const subject = local.account.workosUserId;
+    if (local.account.currentWorkosSessionId === DEV_LOGIN_SESSION_ID) {
+      await this.authority.warm(subject);
+    } else {
+      const ticket = this.authority.fence(subject);
+      try {
+        this.publish(ticket, await this.confirmed(local, {
+          ...local.account, currentWorkosSessionId: DEV_LOGIN_SESSION_ID, updatedAt: this.now() }));
+      } catch (error) { this.authority.fail(ticket); throw error; }
+    }
+    return (this.devSubject = subject);
+  }
+  private async devAdmit(warm: boolean): Promise<{ principal: AuthPrincipal }> {
+    const admit = (subject: string) =>
+      ({ principal: admitAccount(this.authority.snapshot(subject).account, DEV_LOGIN_SESSION_ID) });
+    if (!warm && this.devSubject) {
+      try { return admit(this.devSubject); } catch { /* snapshot expired or fenced: rebind below */ }
+    }
+    return admit(await this.devBind());
+  }
   async authenticate(cookie: string | null): Promise<{ principal: AuthPrincipal; sealedSession?: string }> {
+    if (this.o.devLoginUserId) return this.devAdmit(false);
     const provider = this.provider(); if (!cookie) throw new AuthFault('UNAUTHENTICATED');
     const session = await provider.read(cookie);
     const local = this.authority.snapshot(session.workosUserId);
@@ -107,6 +137,7 @@ export class AuthService {
     return { principal, ...(session.sealedSession ? { sealedSession: session.sealedSession } : {}) };
   }
   async prepare(cookie: string | null): Promise<{ principal: AuthPrincipal; sealedSession?: string }> {
+    if (this.o.devLoginUserId) return this.devAdmit(true);
     const provider = this.provider();
     if (!cookie) throw new AuthFault('UNAUTHENTICATED');
     const session = await provider.read(cookie);
@@ -115,6 +146,7 @@ export class AuthService {
     return { principal, ...(session.sealedSession ? { sealedSession: session.sealedSession } : {}) };
   }
   async logout(principal: AuthPrincipal): Promise<void> {
+    if (this.o.devLoginUserId) return; // Nothing to revoke; the next request is admitted again.
     const provider = this.provider();
     let current: AccountRead | null;
     try { current = await this.o.users.get(principal.account.userId); }
