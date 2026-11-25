@@ -21,6 +21,7 @@ import { z } from 'zod';
 import type { ActiveSummaryRecord, AgentMemoryManifest } from './agent-memory.js';
 import type { MessageRecord } from './message.js';
 import type { UserPersonalizationSettings } from './personalization.js';
+import type { TaskPlan } from './task.js';
 export const contextUsageMetaSchema = z.object({
   historyTokens: z.number().int().nonnegative().safe(),
   maxHistoryTokens: z.number().int().positive().safe(),
@@ -78,6 +79,8 @@ export type ContextAssemblyRequest = {
   responseMode: ResponseMode;
   environment?: EnvironmentContext;
   personalization?: UserPersonalizationSettings;
+  /** Task mode only (docs/task-mode-and-flows/spec.md); absent for normal chat. */
+  taskPlan?: TaskPlan;
 };
 
 export interface ContextAssembler {

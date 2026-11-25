@@ -26,6 +26,7 @@ import { useChat } from '../features/chat/state/chat-context.tsx';
 import { ComposerVoiceControls } from '../features/voice/components/ComposerVoiceControls.tsx';
 import { useDictation } from '../features/voice/dictation/useDictation.ts';
 import { IconSend, IconStop } from './icons.tsx';
+import { FEATURE_FLAGS } from '../app/feature-flags.ts';
 
 const MAX_INPUT_CHARS = 32_000;
 
@@ -78,12 +79,12 @@ export function Composer({ variant = 'docked' }: { variant?: 'docked' | 'centere
     startVoiceConversation={startVoiceConversation} draftInput={state.draftInput}
     activeSessionId={state.activeSessionId} voiceInput={state.voiceInput}
     turnBusy={turnBusy} showCancel={showCancel}
-    messagesLoading={state.messagesLoading} contextUsage={state.contextUsage} />;
+    messagesLoading={state.messagesLoading} contextUsage={state.contextUsage} taskMode={state.taskMode} />;
 }
 
 const ComposerContent = memo(function ComposerContent({ variant, actions, dispatch,
   startVoiceConversation, ...state }: Pick<ChatState, 'draftInput' | 'activeSessionId' |
-    'voiceInput' | 'messagesLoading' | 'contextUsage'> &
+    'voiceInput' | 'messagesLoading' | 'contextUsage' | 'taskMode'> &
   Pick<ReturnType<typeof useChat>, 'actions' | 'dispatch' | 'startVoiceConversation'> &
   { variant: 'docked' | 'centered'; turnBusy: boolean; showCancel: boolean }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -153,6 +154,19 @@ const ComposerContent = memo(function ComposerContent({ variant, actions, dispat
           readOnly={voiceLocked}
           autoFocus={variant === 'centered'}
         />
+
+        {FEATURE_FLAGS.taskMode ? (
+          <button
+            type="button"
+            className="aurvin-task-toggle"
+            aria-pressed={state.taskMode}
+            title="Task mode: Aurvin plans the steps, then works through them"
+            disabled={state.turnBusy || voiceLocked}
+            onClick={() => actions.setTaskMode(!state.taskMode)}
+          >
+            Task
+          </button>
+        ) : null}
 
         <ComposerVoiceControls config={dictation.config} locked={dictation.locked}
           recording={dictation.phase === 'recording'} finalizing={dictation.phase === 'finalizing'}

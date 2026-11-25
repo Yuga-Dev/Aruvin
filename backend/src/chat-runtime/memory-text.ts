@@ -63,6 +63,9 @@ import { buildReferenceManifest, validateManifest } from '../context/reference-s
 import { defaultEnvironmentContext, estimateMessagesTokens, fixedContextMessages, validateInput } from '../context/context-budget.js';
 import { createModelServices } from '../model/index.js';
 import { CompactionRunner } from '../model/compaction-runner.js';
+import { TaskPlanner } from '../model/task-planner.js';
+import { isAnswerOnlyPlan, type TaskPlan } from '../contracts/task.js';
+import { TaskTracker } from './task-tracker.js';
 import { selectCompactionCutpoint, type CompactionTurn } from '../context/cutpoint.js';
 import type { ActiveSummaryRecord } from '../contracts/agent-memory.js';
 import { buildTurnGraph } from '../agent/turn-graph.js';
@@ -137,7 +140,7 @@ type Entry = { identity: Readonly<ResolvedIdentity>; turn: MemoryTurn; snapshot:
   weatherView?: MessageRecord['weatherView'];
   sourceProvenance?: MessageRecord['sourceProvenance']; initialBudget?: CalendarTurnBudget; native?: NativeExecution; running: boolean; web?: WebTurn;
   webAcceptedAt?: number; webLimits?: import('../contracts/web-search-policy.js').WebSearchLimits;
-  memoryUpdated?: true };
+  memoryUpdated?: true; task?: true };
 type Promotion = { lease: ExecutionLease; binding?: CalendarAccountBinding; attempt?: AttemptRecord;
   receipt?: ConfirmedRecord<AttemptRecord>; acceptance?: AcceptanceRecord; graph?: TurnGraph; ledger?: CalendarTurnLedger;
   ready: boolean };
@@ -201,6 +204,7 @@ export class MemoryText {
   private readonly invalidatedAccounts = new Set<string>();
   private readonly compactionJobs = new Set<Promise<void>>();
   private readonly compactionRunner: CompactionRunner;
+  private readonly taskPlanner: TaskPlanner;
   private defaultWeatherProvider: WeatherProvider | null = null;
   constructor(private readonly runtime: DurableChatRuntime, private readonly d: RuntimeDependencies,
     readonly ownerId: string, epoch: string,
@@ -212,6 +216,10 @@ export class MemoryText {
       policy: this.policy, save: options.save ?? this.archive!.save, now: d.now,
       saveVoiceObservation: options.saveVoiceObservation ?? this.archive?.saveVoiceObservation, ...shared });
     this.compactionRunner = new CompactionRunner({
+      putAccounting: d.persistence.metadata.putAccounting.bind(d.persistence.metadata),
+      fetcher: d.fetcher, now: () => this.runtime.now(), report: d.diagnostics?.emit,
+    });
+    this.taskPlanner = new TaskPlanner({
       putAccounting: d.persistence.metadata.putAccounting.bind(d.persistence.metadata),
       fetcher: d.fetcher, now: () => this.runtime.now(), report: d.diagnostics?.emit,
     });
@@ -548,6 +556,7 @@ export class MemoryText {
           graphSchemaVersion: this.d.assets.graphSchemaVersion }, ephemeral);
     if (!this.entries.has(turn.attemptId)) this.entries.set(turn.attemptId, { identity, turn, snapshot, budgets: snapshot.budgets, personalization, clientTimeZone, requestGeo, status: 'accepted', error: null, running: false,
       ...(retry && 'turn' in retry.previous ? { initialBudget: this.foundation.result(retry.previous.turn)?.calendar?.budget } : {}),
+      ...(c.task === true || (retry && 'turn' in retry.previous && retry.previous.task) ? { task: true as const } : {}),
       ...(webAdvertised && webPort ? {
         webAcceptedAt: performance.now(), webLimits: snapshot.settings.webSearch,
       } : {}) });
@@ -1838,8 +1847,15 @@ export class MemoryText {
     else this.runtime.reservations.assertText(c.userId, c.sessionId);
     if (e.running) throw new AppError('CONFLICT_ACTIVE_TURN', 'Another turn is active.');
     let sequence = 0;
-    const send = (event: StreamEvent) => c.emit(streamEnvelopeSchema.parse({ protocolVersion: 1,
+    const sendRaw = (event: StreamEvent) => c.emit(streamEnvelopeSchema.parse({ protocolVersion: 1,
       sessionId: c.sessionId, turnId: c.turnId, attemptId: c.attemptId, sequence: sequence++, event }));
+    // Task mode: progress is inferred from the turn's own tool activity (no extra model calls).
+    let taskTracker: TaskTracker | null = null;
+    let taskPlan: TaskPlan | null = null;
+    const observeTask = async (event: { type: string; proposalId?: unknown }) => {
+      if (taskTracker) for (const step of taskTracker.observe(event)) await sendRaw(step);
+    };
+    const send = async (event: StreamEvent) => { await sendRaw(event); await observeTask(event); };
     const previous = this.foundation.result(e.turn);
     if (previous) {
       if (c.live) return true; // Replay never speaks again.
@@ -1939,13 +1955,28 @@ export class MemoryText {
         return;
       }
       if (frame.event.type === 'calendar-view') e.calendarView = frame.event.view;
-      if (!c.live) { await c.emitCalendar?.(frame); return; }
+      if (!c.live) { await c.emitCalendar?.(frame); await observeTask(frame.event); return; }
       try { void c.emitCalendar?.(frame).catch(() => undefined); }
       catch { /* Presentation cannot fail generation or authority. */ }
     };
     try {
       job.check(); e.status = 'generating';
       await job.wait(send({ type: 'status', status: 'generating', truncated: false }), snapshot.budgets.idleStreamTimeoutMs);
+      // Task mode (text only): one bounded planner call before the normal loop. A
+      // missing/answer-only/failed plan runs this turn as ordinary chat.
+      if (e.task && !c.live && snapshot.modelLimits) {
+        const { plan } = await this.taskPlanner.plan({ userId: c.userId, sessionId: c.sessionId,
+          turnId: c.turnId, attemptId: c.attemptId, request: e.turn.content,
+          config: { identity: { userId: c.userId }, budgets: snapshot.budgets, openRouter: snapshot.openRouter },
+          limits: snapshot.modelLimits, signal: job.signal });
+        job.check();
+        if (plan && !isAnswerOnlyPlan(plan)) {
+          taskPlan = plan;
+          taskTracker = new TaskTracker(c.attemptId, plan);
+          await job.wait(send({ type: 'task-plan', version: 1, taskId: c.attemptId, plan }),
+            snapshot.budgets.idleStreamTimeoutMs);
+        }
+      }
       let source = this.foundation.context(e.turn);
       const assembler = new ReferencedContextAssembler({ memory: this.d.persistence.memory, messages: this.d.persistence.messages,
         metadata: { getVoiceDelivery: async (_u, s, a) => this.foundation.deliveries(s).find(d => d.attemptId === a) ?? null,
@@ -1954,7 +1985,8 @@ export class MemoryText {
       const assembleOnce = () => assembler.assemble({ userId: c.userId, sessionId: c.sessionId,
         turnId: c.turnId, newUserInput: e.turn.content, responseMode: c.live ? 'voice' : 'text',
         environment: defaultEnvironmentContext(new Date(this.runtime.now()), e.clientTimeZone ?? this.d.calendar?.trustedTimeZone ?? 'Etc/UTC'),
-        personalization: e.personalization ?? defaultPersonalizationSettings() }, source);
+        personalization: e.personalization ?? defaultPersonalizationSettings(),
+        ...(taskPlan ? { taskPlan } : {}) }, source);
       const waitForCompaction = async (running: Promise<unknown>) => {
         await new Promise<void>(resolve => {
           const done = () => { job.signal.removeEventListener('abort', done); resolve(); };
@@ -2661,6 +2693,8 @@ export class MemoryText {
       if (!c.live && usage?.contextUsage)
         await send({ type: 'context-state', contextUsage: usage.contextUsage,
           ...(usage.compaction ? { compaction: usage.compaction } : {}) });
+      if (taskTracker) for (const step of taskTracker.finish(
+        e.status === 'completed' || e.status === 'truncated' ? 'completed' : 'failed')) await sendRaw(step);
       await send({ type: 'status', status: e.status, truncated: e.status === 'truncated', save: this.status(c.userId, c.sessionId, c.turnId)?.save });
       if (e.status === 'completed' || e.status === 'truncated')
         await send({ type: 'completed', outcome: e.status, assistantMessageId: e.turn.outputMessageId,
@@ -2670,6 +2704,7 @@ export class MemoryText {
           ...(this.foundation.result(e.turn)?.output.weatherView
             ? { weatherView: this.foundation.result(e.turn)!.output.weatherView } : {}),
           ...(this.foundation.result(e.turn)?.output.memoryUpdated ? { memoryUpdated: true } : {}),
+          ...(taskTracker ? { task: taskTracker.snapshot() } : {}),
           ...(!c.live && usage?.compaction ? { compaction: usage.compaction } : {}),
           ...(!c.live && usage?.contextUsage ? { contextUsage: usage.contextUsage } : {}) });
       else if (e.error) await send({ type: 'error', ...e.error.toClientBody() });

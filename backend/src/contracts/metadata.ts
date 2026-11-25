@@ -33,7 +33,7 @@ export const accountingRecordSchema = z
   .object({
     schemaVersion: schemaVersionSchema,
     kind: z.literal('accounting'),
-    purpose: z.enum(['chat', 'compaction', 'memory']).optional(),
+    purpose: z.enum(['chat', 'compaction', 'memory', 'task-plan']).optional(),
     userId: idSchema,
     sessionId: idSchema,
     turnId: idSchema,

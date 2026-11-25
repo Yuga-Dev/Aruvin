@@ -66,6 +66,8 @@ export const submitTurnRequestSchema = z
      * it stays valid here; the server-side acceptance rule is a runtime concern.
      */
     calendarReplyTo: calendarReplyReferenceSchema.optional(),
+    /** Task mode (docs/task-mode-and-flows/spec.md): plan first, then the normal tool loop. */
+    task: z.literal(true).optional(),
   })
   .strict();
 

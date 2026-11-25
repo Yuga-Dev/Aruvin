@@ -18,6 +18,7 @@
  * ============================================================================
  */
 
+import { applyTaskStep, snapshotForPlan } from '../../../api/task-protocol.ts';
 import type {
   AttemptStatus,
   ClientErrorBody,
@@ -217,6 +218,8 @@ export const initialChatState: ChatState = {
   weatherViewsByTurn: {},
   weatherLastSequenceByTurn: {},
   pendingWebContinuationBreak: false,
+  taskMode: false,
+  activeTask: null,
 };
 
 const WEB_TOOL_IN_FLIGHT = new Set(['searching', 'reading', 'fallback']);
@@ -465,6 +468,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         weatherViewsByTurn: {},
         weatherLastSequenceByTurn: {},
         pendingWebContinuationBreak: false,
+        activeTask: null,
       };
     }
 
@@ -682,6 +686,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         weatherViewsByTurn: {},
         weatherLastSequenceByTurn: {},
         pendingWebContinuationBreak: false,
+        activeTask: null,
       };
     }
 
@@ -908,6 +913,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
 
       return {
         ...state,
+        activeTask: null,
         isSubmitting: true,
         turnStatus: 'submitting',
         draftInput: '',
@@ -1140,6 +1146,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ...(action.payload.memoryUpdated === true && !state.activeSessionTemporary
           ? { memoryUpdated: true as const }
           : {}),
+        ...((action.payload.task ?? state.activeTask) ? { task: action.payload.task ?? state.activeTask! } : {}),
       };
 
       const streamingWeatherId = state.activeTurnId ? `${state.activeTurnId}::canvas::weather` : null;
@@ -1173,7 +1180,20 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         compaction: mergeCompaction(state.compaction, action.payload.compaction),
         contextUsage: action.payload.contextUsage ?? state.contextUsage,
         messages: [...state.messages, assistantMsg],
+        activeTask: null,
       };
+    }
+
+    case 'TASK_MODE_SET':
+      return { ...state, taskMode: action.payload };
+
+    case 'TASK_EVENT': {
+      const { sessionId, turnId, attemptId, event } = action.payload;
+      if (sessionId !== state.activeSessionId || turnId !== state.activeTurnId || attemptId !== state.activeAttemptId) {
+        return state;
+      }
+      if (event.type === 'task-plan') return { ...state, activeTask: snapshotForPlan(event) };
+      return state.activeTask ? { ...state, activeTask: applyTaskStep(state.activeTask, event) } : state;
     }
 
     case 'STREAM_ERROR': {

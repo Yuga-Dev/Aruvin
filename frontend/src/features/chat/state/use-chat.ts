@@ -579,11 +579,18 @@ export function useChatActions(
             ...(event.compaction ? { compaction: event.compaction } : {}),
             ...(event.contextUsage ? { contextUsage: event.contextUsage } : {}),
             ...(event.memoryUpdated === true ? { memoryUpdated: true as const } : {}),
+            ...(event.task ? { task: event.task } : {}),
           },
         });
         if (!event.save && !stateRef.current.activeSessionTemporary) {
           reconcileSessionsAfterTurnRef.current(envelope.sessionId);
         }
+      } else if (event.type === 'task-plan' || event.type === 'task-step') {
+        dispatch({
+          type: 'TASK_EVENT',
+          payload: { sessionId: envelope.sessionId, turnId: envelope.turnId, attemptId: envelope.attemptId, event },
+        });
+        return;
       } else if (event.type === 'web-activity') {
         dispatch({
           type: 'WEB_ACTIVITY',
@@ -1018,6 +1025,8 @@ export function useChatActions(
               content: text,
               idempotencyKey,
               ...(isNewTemporary ? { ephemeral: true } : {}),
+              // A calendar confirmation reply is never a new task.
+              ...(state.taskMode && !proposal ? { task: true as const } : {}),
               calendarProtocol: 2,
               ...(proposal?.proposalRevision !== undefined ? { calendarReplyTo: {
                 proposalId: proposal.proposalId, revision: proposal.proposalRevision,
@@ -1112,6 +1121,7 @@ export function useChatActions(
       state.draftInput,
       state.isStreaming,
       state.isSubmitting,
+      state.taskMode,
       state.turnStatus,
       state.voiceInput,
       voiceLease,
@@ -1278,6 +1288,8 @@ export function useChatActions(
     [dispatch, voiceLease, state.voiceInput],
   );
 
+  const setTaskMode = useCallback((on: boolean) => dispatch({ type: 'TASK_MODE_SET', payload: on }), [dispatch]);
+
   return useMemo(
     () => ({
       startNewChat,
@@ -1298,6 +1310,7 @@ export function useChatActions(
       writeVoiceDraft,
       releaseVoiceInput,
       bindVoiceConversation,
+      setTaskMode,
     }),
     [
       startNewChat,
@@ -1318,6 +1331,7 @@ export function useChatActions(
       writeVoiceDraft,
       releaseVoiceInput,
       bindVoiceConversation,
+      setTaskMode,
     ],
   );
 }

@@ -67,6 +67,8 @@ export type SubmitTurnCommand = {
    * binds it to the accepted attempt; it never authorises an effect by itself.
    */
   calendarReplyTo?: CalendarReplyReference;
+  /** Task mode: plan before the normal tool loop (memory-first path only). */
+  task?: true;
   /** Normalized client time zone hint from request admission; never a wire body field. */
   clientTimeZone?: string | null;
   requestGeo?: RequestGeoHint | null;

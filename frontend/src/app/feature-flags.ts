@@ -25,6 +25,7 @@ export const FEATURE_FLAGS = {
   memory: false, // Release 5
   workspace: false, // Release 2
   automations: false, // Release 8
+  taskMode: false, // Release 3: Task toggle in the composer (docs/task-mode-and-flows); on after release approval
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;

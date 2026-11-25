@@ -385,7 +385,7 @@ export class MongoMetadata implements MetadataRepository, AccountingReportingRep
     if (value.cost !== null && !Number.isFinite(value.cost)) {
       throw new AppError('INVALID_REQUEST', 'Invalid accounting cost.');
     }
-    if (value.purpose !== 'compaction' && value.purpose !== 'memory') {
+    if (value.purpose !== 'compaction' && value.purpose !== 'memory' && value.purpose !== 'task-plan') {
       const linked = await this.getAttempt(value.userId, value.sessionId, value.attemptId);
       if (!linked || linked.turnId !== value.turnId || linked.modelId !== value.requestedModel) {
         throw new AppError('INVALID_REQUEST', 'Accounting attempt linkage is invalid.');
