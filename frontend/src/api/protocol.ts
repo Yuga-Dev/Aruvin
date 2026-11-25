@@ -165,7 +165,7 @@ export type VisibleMessage = {
   webSources?: WebSourceReference[]
   webActivities?: WebSearchActivity[]
   memoryUpdated?: boolean
-  /** Task-mode plan and final step states (live turns; not yet restored from history). */
+  /** Task-mode plan and final step states (live and restored from history). */
   task?: TaskSnapshot
 }
 
@@ -342,6 +342,11 @@ function hasValidWeatherView(value: Record<string, unknown>): boolean {
   return value.role === 'assistant' && isWeatherView(value.weatherView)
 }
 
+function hasValidTask(value: Record<string, unknown>): boolean {
+  if (!('task' in value) || value.task === undefined) return true
+  return value.role === 'assistant' && isTaskSnapshot(value.task)
+}
+
 function hasValidMemoryUpdated(value: Record<string, unknown>): boolean {
   if (!('memoryUpdated' in value) || value.memoryUpdated === undefined) return true
   return value.role === 'assistant' && typeof value.memoryUpdated === 'boolean'
@@ -374,7 +379,8 @@ export function isVisibleMessage(value: unknown): value is VisibleMessage {
     typeof value.truncated === 'boolean' &&
     hasValidWebProvenance(value) &&
     hasValidWeatherView(value) &&
-    hasValidMemoryUpdated(value)
+    hasValidMemoryUpdated(value) &&
+    hasValidTask(value)
   )
 }
 

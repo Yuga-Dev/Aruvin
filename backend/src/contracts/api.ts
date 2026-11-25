@@ -137,6 +137,7 @@ export const visibleMessageSchema = messageRecordObjectSchema.pick({
   webSources: true,
   webActivities: true,
   memoryUpdated: true,
+  task: true,
 }).superRefine((v, ctx) => {
   if ((v.webSources !== undefined || v.webActivities !== undefined) && v.role !== 'assistant') {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['role'],
@@ -316,5 +317,6 @@ export function toVisibleMessage(record: MessageRecord): VisibleMessage {
     ...(record.webSources ? { webSources: record.webSources } : {}),
     ...(record.webActivities ? { webActivities: record.webActivities } : {}),
     ...(record.memoryUpdated === true ? { memoryUpdated: true } : {}),
+    ...(record.task ? { task: record.task } : {}),
   });
 }

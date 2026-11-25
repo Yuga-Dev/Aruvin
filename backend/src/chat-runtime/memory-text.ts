@@ -64,7 +64,7 @@ import { defaultEnvironmentContext, estimateMessagesTokens, fixedContextMessages
 import { createModelServices } from '../model/index.js';
 import { CompactionRunner } from '../model/compaction-runner.js';
 import { TaskPlanner } from '../model/task-planner.js';
-import { isAnswerOnlyPlan, type TaskPlan } from '../contracts/task.js';
+import { isAnswerOnlyPlan, type TaskPlan, type TaskStepEvent } from '../contracts/task.js';
 import { TaskTracker } from './task-tracker.js';
 import { selectCompactionCutpoint, type CompactionTurn } from '../context/cutpoint.js';
 import type { ActiveSummaryRecord } from '../contracts/agent-memory.js';
@@ -140,7 +140,7 @@ type Entry = { identity: Readonly<ResolvedIdentity>; turn: MemoryTurn; snapshot:
   weatherView?: MessageRecord['weatherView'];
   sourceProvenance?: MessageRecord['sourceProvenance']; initialBudget?: CalendarTurnBudget; native?: NativeExecution; running: boolean; web?: WebTurn;
   webAcceptedAt?: number; webLimits?: import('../contracts/web-search-policy.js').WebSearchLimits;
-  memoryUpdated?: true; task?: true };
+  memoryUpdated?: true; task?: true; taskSnapshot?: MessageRecord['task'] };
 type Promotion = { lease: ExecutionLease; binding?: CalendarAccountBinding; attempt?: AttemptRecord;
   receipt?: ConfirmedRecord<AttemptRecord>; acceptance?: AcceptanceRecord; graph?: TurnGraph; ledger?: CalendarTurnLedger;
   ready: boolean };
@@ -761,6 +761,7 @@ export class MemoryText {
       ...(e.calendarMutation ? { calendarMutation: e.calendarMutation } : {}),
       ...(e.calendarView ? { calendarView: e.calendarView } : {}),
       ...(e.weatherView ? { weatherView: e.weatherView } : {}),
+      ...(e.taskSnapshot ? { task: e.taskSnapshot } : {}),
       ...(e.sourceProvenance?.length ? { sourceProvenance: e.sourceProvenance } : {}),
       ...(webProjection?.sources.length ? { webSources: [...webProjection.sources] } : {}),
       ...(webProjection?.activities.length ? { webActivities: [...webProjection.activities] } : {}),
@@ -772,6 +773,7 @@ export class MemoryText {
     // Release credential-bearing settings and the extra observation copy.
     e.snapshot = null; e.personalization = null; e.accounting = undefined; e.delivery = undefined; e.calendar = undefined;
     e.calendarMutation = undefined; e.calendarView = undefined; e.weatherView = undefined; e.sourceProvenance = undefined;
+    e.taskSnapshot = undefined;
     e.native?.ledger.freeze(); e.native = undefined; e.web = undefined;
     if (snap && (status === 'completed' || status === 'truncated')) {
       try { this.scheduleCompactionIfNeeded(e.turn.sessionId, snap); }
@@ -1637,6 +1639,7 @@ export class MemoryText {
       completionStatus: seal.outcome, truncated: seal.outcome === 'truncated', ...assistantFields,
       ...(seal.version === 2 && seal.view ? { calendarView: seal.view } : {}),
       ...(e.weatherView ? { weatherView: e.weatherView } : {}),
+      ...(e.taskSnapshot ? { task: e.taskSnapshot } : {}),
       ...(native.loop.provenance().length ? { sourceProvenance: native.loop.provenance() } : {}) });
     this.foundation.commitPromoted(t, { input, output, manifest: seal.target, ...(e.delivery ? { delivery: e.delivery } : {}) });
     const cold = this.sessions.get(t.sessionId)!;
@@ -1645,7 +1648,7 @@ export class MemoryText {
     cold.pendingProposal = pending?.state === 'pending' ? pending : null;
     cold.attempts.push(promoted.attempt!); e.status = seal.outcome; e.error = null;
     e.snapshot = null; e.personalization = null; e.accounting = undefined; e.delivery = undefined; e.calendar = undefined; e.native = undefined;
-    e.weatherView = undefined;
+    e.weatherView = undefined; e.taskSnapshot = undefined;
   }
   async reconcilePromoted(sessionId: string): Promise<void> {
     const e = [...this.entries.values()].find(entry => entry.turn.sessionId === sessionId &&
@@ -1856,6 +1859,16 @@ export class MemoryText {
       if (taskTracker) for (const step of taskTracker.observe(event)) await sendRaw(step);
     };
     const send = async (event: StreamEvent) => { await sendRaw(event); await observeTask(event); };
+    // Close the task once, before the terminal record is built, so the saved
+    // snapshot (A4) and the streamed closing events agree.
+    let taskClosing: TaskStepEvent[] = [];
+    let taskClosed = false;
+    const closeTask = (outcome: 'completed' | 'failed') => {
+      if (!taskTracker || taskClosed) return;
+      taskClosed = true;
+      taskClosing = taskTracker.finish(outcome);
+      e.taskSnapshot = taskTracker.snapshot();
+    };
     const previous = this.foundation.result(e.turn);
     if (previous) {
       if (c.live) return true; // Replay never speaks again.
@@ -1867,7 +1880,8 @@ export class MemoryText {
           save: this.status(c.userId, c.sessionId, c.turnId)!.save,
           ...(previous.output.calendarView ? { calendarView: previous.output.calendarView } : {}),
           ...(previous.output.weatherView ? { weatherView: previous.output.weatherView } : {}),
-          ...(previous.output.memoryUpdated ? { memoryUpdated: true } : {}) });
+          ...(previous.output.memoryUpdated ? { memoryUpdated: true } : {}),
+          ...(previous.output.task ? { task: previous.output.task } : {}) });
       else if (e.error) await send({ type: 'error', ...e.error.toClientBody() });
       return true;
     }
@@ -1913,7 +1927,10 @@ export class MemoryText {
         ? Buffer.byteLength(JSON.stringify({ calendarView: e.calendarView }), 'utf8') - 1 : 0;
       const weatherEncoded = e.weatherView
         ? Buffer.byteLength(JSON.stringify({ weatherView: e.weatherView }), 'utf8') - 1 : 0;
-      if (proseEncoded > messageProseBudget || proseEncoded + artifactsEncoded + viewEncoded + weatherEncoded > this.policy.maxOutputBytes ||
+      // Saved task snapshot; +128 covers later status-label growth (awaiting_approval is longest).
+      const taskEncoded = taskTracker
+        ? Buffer.byteLength(JSON.stringify({ task: taskTracker.snapshot() }), 'utf8') + 128 : 0;
+      if (proseEncoded > messageProseBudget || proseEncoded + artifactsEncoded + viewEncoded + weatherEncoded + taskEncoded > this.policy.maxOutputBytes ||
           (c.live && 1536 + 2 * proseEncoded + 8 + artifactsEncoded > liveEvidenceMaxBytes)) {
         throw new AppError('STORAGE_BUDGET_EXCEEDED', 'The response exceeded its storage limit.', false);
       }
@@ -2628,6 +2645,7 @@ export class MemoryText {
       if (e.native?.loop.memoryWasUpdated()) e.memoryUpdated = true;
       e.status = length ? 'truncated' : 'completed';
       if (!c.live) {
+        closeTask('completed');
         if (promotedSeal) await this.publishPromoted(e, promotedSeal, partial, admittedArtifacts);
         else this.finish(e, partial, e.status);
       }
@@ -2654,7 +2672,7 @@ export class MemoryText {
         e.status = failure.code === 'CANCELLED' ? 'cancelled' : ['INTERRUPTED', 'TIMEOUT'].includes(failure.code) ? 'interrupted' : 'failed';
         e.error = failure;
         if (failure.code === 'PERSISTENCE_ERROR' && e.native) e.native.pending = true;
-        else if (!c.live) this.finish(e, partial, e.status, failure);
+        else if (!c.live) { closeTask('failed'); this.finish(e, partial, e.status, failure); }
       }
     } finally {
       try {
@@ -2693,8 +2711,8 @@ export class MemoryText {
       if (!c.live && usage?.contextUsage)
         await send({ type: 'context-state', contextUsage: usage.contextUsage,
           ...(usage.compaction ? { compaction: usage.compaction } : {}) });
-      if (taskTracker) for (const step of taskTracker.finish(
-        e.status === 'completed' || e.status === 'truncated' ? 'completed' : 'failed')) await sendRaw(step);
+      closeTask(e.status === 'completed' || e.status === 'truncated' ? 'completed' : 'failed');
+      for (const step of taskClosing) await sendRaw(step);
       await send({ type: 'status', status: e.status, truncated: e.status === 'truncated', save: this.status(c.userId, c.sessionId, c.turnId)?.save });
       if (e.status === 'completed' || e.status === 'truncated')
         await send({ type: 'completed', outcome: e.status, assistantMessageId: e.turn.outputMessageId,
@@ -2704,7 +2722,7 @@ export class MemoryText {
           ...(this.foundation.result(e.turn)?.output.weatherView
             ? { weatherView: this.foundation.result(e.turn)!.output.weatherView } : {}),
           ...(this.foundation.result(e.turn)?.output.memoryUpdated ? { memoryUpdated: true } : {}),
-          ...(taskTracker ? { task: taskTracker.snapshot() } : {}),
+          ...(taskTracker ? { task: this.foundation.result(e.turn)?.output.task ?? taskTracker.snapshot() } : {}),
           ...(!c.live && usage?.compaction ? { compaction: usage.compaction } : {}),
           ...(!c.live && usage?.contextUsage ? { contextUsage: usage.contextUsage } : {}) });
       else if (e.error) await send({ type: 'error', ...e.error.toClientBody() });

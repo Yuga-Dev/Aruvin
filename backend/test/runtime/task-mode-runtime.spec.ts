@@ -16,6 +16,7 @@
  * KEY COMPONENTS:
  *    - Task turn: plan event, plan context, closed steps, completed snapshot.
  *    - Fallbacks: no mode = no planner; malformed plan = ordinary chat.
+ *    - A4: the snapshot is saved on the assistant message and returned with history.
  * ============================================================================
  */
 
@@ -25,6 +26,8 @@ import { PROPOSED_MEMORY_TEXT_POLICY } from '../../src/chat-runtime/memory-text.
 import { FRAMES } from '../fixtures/openrouter/frames.js';
 import type { StreamEnvelope } from '../../src/contracts/stream.js';
 import type { ContextChatMessage } from '../../src/contracts/context.js';
+import type { SaveEnvelope } from '../../src/chat-runtime/memory-first-foundation.js';
+import { listMessagesResponseSchema, toVisibleMessage } from '../../src/contracts/api.js';
 
 const PLAN = JSON.stringify({ goal: 'Compare two venues', steps: [
   { title: 'Search both venues', effect: 'read', tool: 'web' },
@@ -37,9 +40,10 @@ const planFrame = (content: string) =>
     usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.0001 } })}\n\ndata: [DONE]\n\n`;
 
 function harness(planReply: string) {
+  const saved: SaveEnvelope[] = [];
   const h = textConfigFixture(textSnapshot(1, { maxOutputTokens: 2048 }, 'fixture/model', 'fixture-A'), deps => ({
     ...deps,
-    memoryFirst: { save: async () => ({ kind: 'confirmed' }),
+    memoryFirst: { save: async envelope => { saved.push(envelope); return { kind: 'confirmed' }; },
       policy: { ...PROPOSED_MEMORY_TEXT_POLICY, flushDelayMs: 5, shutdownDrainMs: 250, writeTimeoutMs: 500 } },
   }));
   let chat = 0;
@@ -60,9 +64,10 @@ function harness(planReply: string) {
     await h.runtime.executeTurn({ userId: h.identity.userId, sessionId: ids.sessionId, turnId: ids.turnId,
       attemptId: ids.attemptId, signal: new AbortController().signal,
       emit: async envelope => { events.push(envelope.event); } });
-    return events;
+    return { events, ids };
   };
-  return { h, run, chatBodies };
+  return { h, saved, run: async (content: string, task?: true) => (await run(content, task)).events,
+    runWithIds: run, chatBodies };
 }
 
 describe('Task mode runtime', () => {
@@ -88,6 +93,30 @@ describe('Task mode runtime', () => {
       expect(steps).toEqual(['s1:skipped', 's2:done']);
       const completed = events.find(e => e.type === 'completed');
       expect(completed?.type === 'completed' && completed.task?.steps.map(s => s.status)).toEqual(['skipped', 'done']);
+    } finally { await h.dispose(); }
+  });
+
+  it('saves the final snapshot on the assistant message and returns it with history (A4)', async () => {
+    const { h, saved, runWithIds } = harness(PLAN);
+    try {
+      const { events, ids } = await runWithIds('Compare the Grand Hall and the Lakeside venue', true);
+      const completed = events.find(e => e.type === 'completed');
+      const live = completed?.type === 'completed' ? completed.task : undefined;
+      expect(live?.steps.map(s => s.status)).toEqual(['skipped', 'done']);
+
+      // The memory-first save carries the same snapshot on the assistant record.
+      await vi.waitFor(() => expect(saved.some(e => 'output' in e && e.output.task)).toBe(true));
+      const envelope = saved.find(e => 'output' in e && e.output.task)!;
+      const output = 'output' in envelope ? envelope.output : undefined;
+      expect(output?.role).toBe('assistant');
+      expect(output?.task).toEqual(live);
+
+      // History from memory, and the archive read projection, both return it.
+      const page = listMessagesResponseSchema.parse(
+        h.runtime.memoryMessages(h.identity.userId, ids.sessionId, { cursor: null, limit: 20 }));
+      expect(page.items.find(m => m.role === 'assistant')?.task).toEqual(live);
+      expect(toVisibleMessage(output!).task).toEqual(live);
+      expect(page.items.find(m => m.role === 'user')).not.toHaveProperty('task');
     } finally { await h.dispose(); }
   });
 

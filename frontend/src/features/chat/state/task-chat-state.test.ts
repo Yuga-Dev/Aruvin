@@ -23,7 +23,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { isStreamEvent, isSubmitTurnRequest, type VisibleMessage } from '../../../api/protocol.ts';
+import { isStreamEvent, isSubmitTurnRequest, isVisibleMessage, type VisibleMessage } from '../../../api/protocol.ts';
 import type { TaskPlanEvent, TaskStepEvent } from '../../../api/task-protocol.ts';
 import { MessageItem } from '../../../components/MessageItem.tsx';
 import { chatReducer, initialChatState } from './chat-reducer.ts';
@@ -84,6 +84,15 @@ describe('task mode chat state', () => {
     expect(isSubmitTurnRequest({ ...base, task: true })).toBe(true);
     expect(isSubmitTurnRequest({ ...base, task: false })).toBe(false);
     expect(isSubmitTurnRequest({ ...base, mode: 'task' })).toBe(false);
+  });
+
+  it('accepts a saved snapshot on history messages and rejects malformed or user-role ones (A4)', () => {
+    const base = { messageId: 'msg_1', turnId: 'turn-t1', eventId: 'evt_1', sequence: 2, role: 'assistant',
+      content: 'Booked.', createdAt: '2026-11-25T10:00:00.000Z', completionStatus: 'completed', truncated: false };
+    const task = { version: 1, taskId: 'att-t1', plan: planEvent.plan, steps: [{ stepId: 's1', status: 'done' }] };
+    expect(isVisibleMessage({ ...base, task })).toBe(true);
+    expect(isVisibleMessage({ ...base, task: { ...task, steps: [{ stepId: 's1', status: 'paused' }] } })).toBe(false);
+    expect(isVisibleMessage({ ...base, role: 'user', task })).toBe(false);
   });
 
   it('renders the plan with text status labels above the answer', () => {
