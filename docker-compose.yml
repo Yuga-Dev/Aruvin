@@ -1,0 +1,48 @@
+# ============================================================================
+# FILE: docker-compose.yml
+# LOCATION: docker-compose.yml
+# PURPOSE: Local/access-controlled stack: MongoDB replica set, backend, nginx.
+# ROLE IN PROJECT: Not a production or Azure profile. Exactly one backend per
+#   database: never scale `backend` or run another backend against `mongo`.
+# KEY COMPONENTS: mongo (single-node rs0), backend (Nest), web (nginx sidecar).
+# ============================================================================
+services:
+  mongo:
+    image: mongo:8.0
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes: [mongo-data:/data/db]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval",
+        "try { rs.status() } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}) }; quit(db.hello().isWritablePrimary ? 0 : 1)"]
+      interval: 5s
+      retries: 30
+
+  backend:
+    build: { context: ., dockerfile: backend/Dockerfile }
+    env_file: backend/.env            # secrets injected at runtime, never baked in
+    environment:                      # overrides env_file
+      # Login over plain http is only admitted in development on loopback.
+      # Production needs an https FRONTEND_ORIGIN with TLS terminated by nginx.
+      NODE_ENV: development
+      FRONTEND_ORIGIN: http://localhost:${AURVIN_HTTP_PORT:-8080}   # must equal the browser URL
+      PERSISTENCE_PROFILE: native-mongodb
+      MONGODB_URI: mongodb://mongo:27017/?replicaSet=rs0
+      AURVIN_EXECUTOR_TOPOLOGY: single-process
+      AURVIN_LOCAL_CRASH_RECOVERY: "false"   # Windows-only feature
+    # Joins web's network namespace: nginx reaches the loopback-bound backend at
+    # 127.0.0.1:3000. The backend can restart freely; only a web restart breaks it.
+    network_mode: service:web
+    depends_on:
+      mongo: { condition: service_healthy }
+      web: { condition: service_started, restart: true }
+    stop_grace_period: 30s            # keep >= SHUTDOWN_DRAIN_MS
+    restart: unless-stopped
+    # No healthcheck on /api/operations/ready: it is 503 during provider outages.
+
+  web:
+    build: { context: ., dockerfile: frontend/Dockerfile }
+    ports: ["127.0.0.1:${AURVIN_HTTP_PORT:-8080}:8080"]
+    restart: unless-stopped
+
+volumes:
+  mongo-data: {}
