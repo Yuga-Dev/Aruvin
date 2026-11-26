@@ -29,8 +29,9 @@ import type { ContextChatMessage } from '../../src/contracts/context.js';
 import type { SaveEnvelope } from '../../src/chat-runtime/memory-first-foundation.js';
 import { listMessagesResponseSchema, toVisibleMessage } from '../../src/contracts/api.js';
 
+// The fixture turn has no web/calendar/environment tools, so the plan uses only "none".
 const PLAN = JSON.stringify({ goal: 'Compare two venues', steps: [
-  { title: 'Search both venues', effect: 'read', tool: 'web' },
+  { title: 'List what matters for each venue', effect: 'read', tool: 'none' },
   { title: 'Write the comparison', effect: 'answer', tool: 'none' },
 ] });
 
@@ -85,14 +86,18 @@ describe('Task mode runtime', () => {
       expect(bodies[0].user).toBe(h.identity.userId);
       expect(bodies[0]).not.toHaveProperty('tools');
       const answer = bodies[1].messages;
-      expect(answer.filter(m => m.role === 'system' && m.content.startsWith('Task mode:'))).toHaveLength(1);
+      const planMessages = answer.filter(m => m.role === 'system' && m.content.startsWith('Task mode:'));
+      expect(planMessages).toHaveLength(1);
+      // Numbered titles, not raw JSON with tool names the model could mistake for plugins.
+      expect(planMessages[0].content).toContain('1. List what matters for each venue');
+      expect(planMessages[0].content).not.toContain('"tool"');
       expect(answer.at(-1)).toEqual({ role: 'user', content: request });
 
-      // No web activity happened, so the web step is skipped and the answer step done.
+      // Tool-less steps close as done when the answer completes.
       const steps = events.filter(e => e.type === 'task-step').map(e => `${e.stepId}:${e.status}`);
-      expect(steps).toEqual(['s1:skipped', 's2:done']);
+      expect(steps).toEqual(['s1:done', 's2:done']);
       const completed = events.find(e => e.type === 'completed');
-      expect(completed?.type === 'completed' && completed.task?.steps.map(s => s.status)).toEqual(['skipped', 'done']);
+      expect(completed?.type === 'completed' && completed.task?.steps.map(s => s.status)).toEqual(['done', 'done']);
     } finally { await h.dispose(); }
   });
 
@@ -102,7 +107,7 @@ describe('Task mode runtime', () => {
       const { events, ids } = await runWithIds('Compare the Grand Hall and the Lakeside venue', true);
       const completed = events.find(e => e.type === 'completed');
       const live = completed?.type === 'completed' ? completed.task : undefined;
-      expect(live?.steps.map(s => s.status)).toEqual(['skipped', 'done']);
+      expect(live?.steps.map(s => s.status)).toEqual(['done', 'done']);
 
       // The memory-first save carries the same snapshot on the assistant record.
       await vi.waitFor(() => expect(saved.some(e => 'output' in e && e.output.task)).toBe(true));

@@ -40,6 +40,16 @@ describe('TaskTracker', () => {
     expect(ticks(t.finish('completed'))).toEqual(['s2:done', 's3:skipped', 's4:skipped', 's5:done']);
   });
 
+  it('closes a later same-family read step as done, but never an unconfirmed write', () => {
+    const t = new TaskTracker('task_1', { goal: 'Weather and packing', steps: [
+      { id: 's1', title: 'Read the date', effect: 'read', tool: 'environment' },
+      { id: 's2', title: 'Read the weather', effect: 'read', tool: 'environment' },
+      { id: 's3', title: 'Pack', effect: 'answer', tool: 'none' },
+    ] });
+    t.observe({ type: 'weather-view' });
+    expect(ticks(t.finish('completed'))).toEqual(['s1:done', 's2:done', 's3:done']);
+  });
+
   it('skips a step whose tool never ran when a later family appears', () => {
     const t = new TaskTracker('task_1', plan);
     expect(ticks(t.observe({ type: 'weather-view' }))).toEqual(['s1:skipped', 's2:skipped', 's3:running']);

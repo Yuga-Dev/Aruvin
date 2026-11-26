@@ -63,7 +63,7 @@ import { buildReferenceManifest, validateManifest } from '../context/reference-s
 import { defaultEnvironmentContext, estimateMessagesTokens, fixedContextMessages, validateInput } from '../context/context-budget.js';
 import { createModelServices } from '../model/index.js';
 import { CompactionRunner } from '../model/compaction-runner.js';
-import { TaskPlanner } from '../model/task-planner.js';
+import { TaskPlanner, type PlannerTool } from '../model/task-planner.js';
 import { isAnswerOnlyPlan, type TaskPlan, type TaskStepEvent } from '../contracts/task.js';
 import { TaskTracker } from './task-tracker.js';
 import { selectCompactionCutpoint, type CompactionTurn } from '../context/cutpoint.js';
@@ -1982,8 +1982,13 @@ export class MemoryText {
       // Task mode (text only): one bounded planner call before the normal loop. A
       // missing/answer-only/failed plan runs this turn as ordinary chat.
       if (e.task && !c.live && snapshot.modelLimits) {
+        const tools: PlannerTool[] = [
+          ...(snapshot.calendar?.enabled && this.d.calendar && isCalendarV2(this.d.calendar) ? ['calendar' as const] : []),
+          ...(e.web ? ['web' as const] : []),
+          ...(snapshot.modelLimits.tools ? ['environment' as const] : []),
+        ];
         const { plan } = await this.taskPlanner.plan({ userId: c.userId, sessionId: c.sessionId,
-          turnId: c.turnId, attemptId: c.attemptId, request: e.turn.content,
+          turnId: c.turnId, attemptId: c.attemptId, request: e.turn.content, tools,
           config: { identity: { userId: c.userId }, budgets: snapshot.budgets, openRouter: snapshot.openRouter },
           limits: snapshot.modelLimits, signal: job.signal });
         job.check();

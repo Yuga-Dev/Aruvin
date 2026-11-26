@@ -31,12 +31,14 @@ const TOOL_BY_EVENT: Readonly<Record<string, TaskStepTool>> = {
 
 /**
  * ponytail: progress is inferred, not reported by the model. Ceiling: a step is
- * matched by tool family only, so two consecutive same-family steps tick
- * together until the next family appears. Upgrade path is a model-reported
+ * matched by tool family only (same-family read steps close together), and a
+ * tool call that emits no stream event (a date-only environment lookup) is
+ * invisible, so its step can show skipped. Upgrade path is a model-reported
  * progress tool, which needs higher per-turn dispatch caps (spec §2.3).
  */
 export class TaskTracker {
   private readonly status: TaskStepStatus[];
+  private readonly seen = new Set<TaskStepTool>();
   private cursor = -1;
 
   constructor(readonly taskId: string, readonly plan: TaskPlan) {
@@ -46,6 +48,7 @@ export class TaskTracker {
   observe(event: { type: string; proposalId?: unknown }): TaskStepEvent[] {
     const tool = TOOL_BY_EVENT[event.type];
     if (!tool) return [];
+    this.seen.add(tool);
     const out: TaskStepEvent[] = [];
     const current = this.cursor >= 0 ? this.plan.steps[this.cursor] : undefined;
     if (current?.tool !== tool || this.status[this.cursor] === 'awaiting_approval') {
@@ -76,12 +79,20 @@ export class TaskTracker {
       steps: this.plan.steps.map((step, i) => ({ stepId: step.id, status: this.status[i] })) };
   }
 
-  /** Close steps before `end`: active → done, tool-less → done, never-used tool → skipped. */
+  /**
+   * Close steps before `end`: active → done; a tool-less step, or a read step
+   * whose tool family was seen in use, → done; otherwise → skipped. A write step
+   * never closes as done from activity alone (a read does not prove the change).
+   */
   private closeBefore(end: number, out: TaskStepEvent[]): void {
     for (let i = 0; i < end; i++) {
       const status = this.status[i];
+      const step = this.plan.steps[i];
       if (status === 'running') this.set(i, 'done', out);
-      else if (status === 'queued') this.set(i, this.plan.steps[i].tool === 'none' ? 'done' : 'skipped', out);
+      else if (status === 'queued') {
+        const used = step.tool === 'none' || (step.effect !== 'write' && this.seen.has(step.tool));
+        this.set(i, used ? 'done' : 'skipped', out);
+      }
     }
   }
 

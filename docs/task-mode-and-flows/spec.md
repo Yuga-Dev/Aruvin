@@ -215,3 +215,19 @@ Prerequisite: fix the failing suites listed in [feature-status.md](../roadmap/fe
 3. **Flow delivery** — a new chat in the sidebar (+ badge). Email waits for Release 6.
 4. **Scheduler** — in-process (§2.9) now; BullMQ + Redis only when multi-instance is admitted. The Release 8 roadmap line should be updated when Phase B starts.
 5. **Limits** — §2.6 values accepted as starting values.
+
+## 5. Local trial (26 Nov 2026)
+
+Live run on the developer machine: backend `npm run start:dev` against the local MongoDB, Vite dev server, real OpenRouter model `baidu/ernie-5.5-flash-preview:free` (cost reported 0), `taskMode` flag on for the run only (not committed). Driven through the API (`curl` + SSE) and a headless Chrome over the DevTools protocol. Account had environment tools only (no web search, no Calendar connection).
+
+| # | Finding | Fix |
+| --- | --- | --- |
+| 1 | No plan: the planner used exactly its 512-token cap; the reasoning model ran out before finishing the JSON, so the turn fell back to normal chat. | Planner gets the normal reply budget (`min(budgets.maxOutputTokens, limits.outputTokens)`); `finish_reason: length` records `truncated` and yields no plan. |
+| 2 | Plan named web search (not enabled); the main model then tried a missing tool and answered "That plugin or tool is not available." | Planner prompt lists only tools this turn has; a plan naming any other tool is rejected (normal chat). |
+| 3 | With the plan as raw JSON plus a strict "skip unavailable tools" rule, the model claimed it had no weather tool. | Plan message is numbered titles with real tool names (`get_environment`, `web_tool`, Calendar plugin); skip only if no tool can do the step. |
+| 4 | Drafting steps labelled `write`. | Prompt: `write` only creates/changes a calendar event; a tool-less `write` is relabelled `read`. |
+| 5 | Two consecutive environment steps: one weather event ticked only the first; the second showed Skipped. | On completion a read step whose tool family was seen in use closes as done (never a write). |
+
+After the fixes: API runs produced bounded plans using only available tools, live step ticks, and complete answers; the browser run showed the toggle, the live card (Waiting), all steps Done on completion, the same card after reload + reopening the chat, and no console errors.
+
+Remaining limits: a tool call that emits no stream event (a date-only `get_environment`) is invisible to progress, so its step can show Skipped; plan quality varies run to run with this free preview model; Calendar create/approval and web search were not exercised (not configured on this account).
