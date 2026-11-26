@@ -25,6 +25,7 @@ import { schemaVersionSchema } from './versions.js';
 import { canvasArtifactsSchema } from './canvas-artifact.js';
 import { calendarViewSchema } from './calendar-view.js';
 import { weatherViewSchema } from './weather-view.js';
+import { taskSnapshotSchema } from './task.js';
 import { isCanvasArtifactId } from './voice-wire.js';
 import { webSourcesSchema, webActivitiesSchema } from './web-search-wire.js';
 
@@ -81,6 +82,8 @@ export const messageRecordObjectSchema = z
     webSources: webSourcesSchema.optional(),
     webActivities: webActivitiesSchema.optional(),
     memoryUpdated: z.boolean().optional(),
+    /** Task-mode plan and final step states (docs/task-mode-and-flows/spec.md A4). */
+    task: taskSnapshotSchema.optional(),
   })
   .strict();
 
@@ -94,6 +97,9 @@ export const messageRecordSchema = messageRecordObjectSchema.superRefine((v, ctx
   }
   if (v.weatherView !== undefined && v.role !== 'assistant') {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['role'], message: 'weather views require assistant role' });
+  }
+  if (v.task !== undefined && v.role !== 'assistant') {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['role'], message: 'task snapshots require assistant role' });
   }
   if (v.canvasArtifacts !== undefined) {
     if (v.role !== 'assistant') {

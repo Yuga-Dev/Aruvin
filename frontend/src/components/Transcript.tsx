@@ -112,6 +112,7 @@ export function Transcript({
     state.webActivitiesByTurn,
     state.webSourcesByTurn,
     state.weatherViewsByTurn,
+    state.activeTask,
     state.compaction?.compactedThroughSequence,
   ], [
     state.messages,
@@ -122,6 +123,7 @@ export function Transcript({
     state.webActivitiesByTurn,
     state.webSourcesByTurn,
     state.weatherViewsByTurn,
+    state.activeTask,
     state.compaction?.compactedThroughSequence,
   ]);
 
@@ -211,6 +213,7 @@ export function Transcript({
               ...(state.activeTurnId && state.weatherViewsByTurn[state.activeTurnId]
                 ? { weatherView: state.weatherViewsByTurn[state.activeTurnId] }
                 : {}),
+              ...(state.activeTask ? { task: state.activeTask } : {}),
             }}
           />
         ) : null}

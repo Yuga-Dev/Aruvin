@@ -66,6 +66,8 @@ export const submitTurnRequestSchema = z
      * it stays valid here; the server-side acceptance rule is a runtime concern.
      */
     calendarReplyTo: calendarReplyReferenceSchema.optional(),
+    /** Task mode (docs/task-mode-and-flows/spec.md): plan first, then the normal tool loop. */
+    task: z.literal(true).optional(),
   })
   .strict();
 
@@ -135,6 +137,7 @@ export const visibleMessageSchema = messageRecordObjectSchema.pick({
   webSources: true,
   webActivities: true,
   memoryUpdated: true,
+  task: true,
 }).superRefine((v, ctx) => {
   if ((v.webSources !== undefined || v.webActivities !== undefined) && v.role !== 'assistant') {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['role'],
@@ -314,5 +317,6 @@ export function toVisibleMessage(record: MessageRecord): VisibleMessage {
     ...(record.webSources ? { webSources: record.webSources } : {}),
     ...(record.webActivities ? { webActivities: record.webActivities } : {}),
     ...(record.memoryUpdated === true ? { memoryUpdated: true } : {}),
+    ...(record.task ? { task: record.task } : {}),
   });
 }

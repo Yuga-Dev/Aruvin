@@ -113,6 +113,27 @@ Super-admins can browse verifiable text-chat OpenRouter models (`GET /api/admin/
 - **Save revalidation & snapshots**: Saving (`PUT /api/admin/config`) independently re-fetches and revalidates compatibility on the server before CAS. New text attempts, explicit retries, and new voice sessions pick up the latest saved snapshot; in-flight attempts and active voice calls keep their accepted snapshot.
 - **Limitations**: Catalogue checks do not certify paid inference, account-specific privacy routing, SSE streaming, tool-calling behavior, or reasoning continuity across tool rounds.
 
+## Run with Docker (local)
+
+[docker-compose.yml](docker-compose.yml) runs a single-node MongoDB replica set, the backend ([backend/Dockerfile](backend/Dockerfile)), and nginx serving the frontend ([frontend/Dockerfile](frontend/Dockerfile), [deployment/docker/nginx.conf](deployment/docker/nginx.conf)). Build context is the repository root. Secrets come from `backend/.env` at runtime and are excluded from images by [.dockerignore](.dockerignore).
+
+```powershell
+$env:AURVIN_HTTP_PORT='8080'   # optional host port; default 8080
+docker compose up -d --build
+Invoke-RestMethod http://127.0.0.1:8080/api/operations/live
+docker compose down            # add -v to also delete the MongoDB volume
+```
+
+Operator scripts such as the first Super Admin bootstrap follow [docs/workos-authentication/operations.md](docs/workos-authentication/operations.md). Run them in a one-off container instead of `npm run`, for example `docker compose stop backend` then `docker compose run --rm --no-deps backend node dist/scripts/bootstrap-auth.js preflight ...` (`adopt` requires the app stopped).
+
+- Open exactly `http://localhost:<AURVIN_HTTP_PORT>`. `FRONTEND_ORIGIN` is derived from that port, and a different origin (including `127.0.0.1`) is refused.
+- The backend binds `127.0.0.1` by design, so it joins the `web` container's network namespace; nginx reaches it on loopback and the backend's auth/admin ingress checks still see a loopback peer. Restarting `backend` is safe; recreate both if `web` restarts.
+- Compose sets `NODE_ENV=development` because login over plain HTTP is only admitted in development on loopback. HTTPS deployment needs an `https://` `FRONTEND_ORIGIN` with TLS terminated by this nginx.
+- The Docker database starts empty: create an account and configure OpenRouter in Manage Aurvin before chat is ready. It is separate from any database in `backend/.env`; `MONGODB_URI` and `PERSISTENCE_PROFILE` are overridden.
+- One backend per database: never scale `backend`, and do not run `npm run start:dev` against the Docker MongoDB at the same time.
+- Do not point a health check at `/api/operations/ready`; it is not a restart probe.
+- This is a local/access-controlled profile. It does not certify topology, Azure, staging, or production readiness.
+
 ## Build and start the backend release
 
 Run from `backend/` in the full release checkout:

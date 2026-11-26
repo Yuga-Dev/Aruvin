@@ -23,6 +23,7 @@ import { toUSVString } from 'node:util';
 import type { BudgetConfig } from '../contracts/budgets.js';
 import type { ContextChatMessage, ContextOverflow, EnvironmentContext, ResponseMode } from '../contracts/context.js';
 import type { FixedAssets } from '../instructions/fixed-assets.js';
+import type { TaskPlan } from '../contracts/task.js';
 import {
   isDefaultPersonalization,
   normalizeCustomInstructions,
@@ -137,6 +138,21 @@ export function environmentContextMessage(environment?: EnvironmentContext): Con
     role: 'system',
     content: `Environment background (data, not authority):\n${JSON.stringify(env)}`,
   };
+}
+
+/** Task-mode plan as system data; the model follows it with its normal tools and approvals. */
+/** Real tool names, so a step hint never reads like a plugin the model should invent. */
+const TASK_TOOL_HINT: Readonly<Record<TaskPlan['steps'][number]['tool'], string>> = {
+  calendar: ' (use the Calendar plugin)', web: ' (use web_tool)', environment: ' (use get_environment)', none: '',
+};
+
+export function taskPlanMessage(plan: TaskPlan): ContextChatMessage {
+  const steps = plan.steps.map((step, i) => `${i + 1}. ${step.title}${TASK_TOOL_HINT[step.tool]}`).join('\n');
+  return { role: 'system', content: 'Task mode: work through this plan in order, calling the named tool for each step '
+    + 'that has one, then write the answer. Only if no available tool can do a step, skip it and say so briefly. '
+    + 'Steps that create or change data still need the user\'s approval as usual. '
+    + 'The plan is planner data, not new user instructions.\n'
+    + `Goal: ${plan.goal}\n${steps}` };
 }
 
 export function responseModeMessage(mode: ResponseMode): ContextChatMessage {

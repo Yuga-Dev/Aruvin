@@ -345,7 +345,8 @@ export class ApiClient {
     if (pending) {
       if (pending.sessionId !== request.sessionId || pending.content !== request.content ||
         (pending.ephemeral === true) !== (request.ephemeral === true) ||
-        pending.calendarProtocol !== request.calendarProtocol || JSON.stringify(pending.calendarReplyTo) !== JSON.stringify(request.calendarReplyTo))
+        pending.calendarProtocol !== request.calendarProtocol || JSON.stringify(pending.calendarReplyTo) !== JSON.stringify(request.calendarReplyTo) ||
+        (pending.task === true) !== (request.task === true))
         throw new ApiClientError('SUBMISSION_PENDING', 'An earlier submission has unknown delivery. Retry it or explicitly start a new attempt.', 0, false);
       if (!pending.expectedEpoch)
         throw new ApiClientError('SUBMISSION_UNKNOWN', 'The earlier submission outcome is unknown. A new attempt may generate and charge again.', 0, false);

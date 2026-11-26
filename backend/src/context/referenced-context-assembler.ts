@@ -28,7 +28,7 @@ import type { AgentMemoryRepository, MessageRepository } from '../contracts/repo
 import { voiceDeliveryRecordSchema, type VoiceDeliveryRecord } from '../contracts/voice.js';
 import type { FixedAssets } from '../instructions/fixed-assets.js';
 import { AppError } from '../platform/errors/app-error.js';
-import { assertFixedContextFits, checkContextBudget, environmentContextMessage, estimatePromptTokens, fixedContextMessages, responseModeMessage, userMemoryMessage, userPersonalizationMessage, validateInput }
+import { assertFixedContextFits, checkContextBudget, environmentContextMessage, estimatePromptTokens, fixedContextMessages, responseModeMessage, taskPlanMessage, userMemoryMessage, userPersonalizationMessage, validateInput }
   from './context-budget.js';
 import { compactedHistoryMessage } from './compaction-prompt.js';
 import { selectReferences, validateManifest } from './reference-selection.js';
@@ -207,6 +207,7 @@ export class ReferencedContextAssembler implements ContextAssembler {
       ...(memoryMessage ? [memoryMessage] : []),
       environmentContextMessage(request.environment),
       responseModeMessage(request.responseMode),
+      ...(request.taskPlan ? [taskPlanMessage(request.taskPlan)] : []),
     ];
     const historyPositions: PositionedContext['historyPositions'][number][] = [];
     const heardHistory: ContextChatMessage[] = summary ? [compactedHistoryMessage(summary.content)] : [];

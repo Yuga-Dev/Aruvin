@@ -28,6 +28,7 @@ import { CONTRACT_VERSIONS } from './versions.js';
 import { webActivityEventSchema, webSourcesEventSchema, webSourcesSchema, webActivitiesSchema } from './web-search-wire.js';
 import { compactionCheckpointMetaSchema } from './agent-memory.js';
 import { contextUsageMetaSchema } from './context.js';
+import { taskPlanEventSchema, taskSnapshotSchema, taskStepEventSchema } from './task.js';
 
 export const STREAM_PROTOCOL_VERSION = CONTRACT_VERSIONS.stream;
 export const saveStateSnapshotSchema = z.object({
@@ -92,6 +93,7 @@ export const completedEventSchema = z
     compaction: compactionCheckpointMetaSchema.optional(),
     contextUsage: contextUsageMetaSchema.optional(),
     memoryUpdated: z.boolean().optional(),
+    task: taskSnapshotSchema.optional(),
   })
   .strict();
 
@@ -119,6 +121,8 @@ export const streamEventSchema = z.discriminatedUnion('type', [
   weatherViewEventSchema,
   webActivityEventSchema,
   webSourcesEventSchema,
+  taskPlanEventSchema,
+  taskStepEventSchema,
 ]);
 
 export const streamEnvelopeSchema = z

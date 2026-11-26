@@ -17,6 +17,7 @@
  * ============================================================================
  */
 
+import type { TaskPlanEvent, TaskSnapshot, TaskStepEvent } from '../../../api/task-protocol.ts';
 import type {
   CalendarClarificationEvent,
   CalendarProgressPhase,
@@ -93,6 +94,10 @@ export type ChatState = {
   weatherViewsByTurn: Record<string, WeatherView>;
   weatherLastSequenceByTurn: Record<string, number>;
   pendingWebContinuationBreak: boolean;
+  /** Task mode composer toggle (docs/task-mode-and-flows/spec.md). */
+  taskMode: boolean;
+  /** Plan and step states of the in-flight Task-mode turn. */
+  activeTask: TaskSnapshot | null;
 };
 
 export type ChatAction =
@@ -175,9 +180,15 @@ export type ChatAction =
         compaction?: CompactionCheckpointMeta;
         contextUsage?: ContextUsageMeta;
         memoryUpdated?: boolean;
+        task?: TaskSnapshot;
       };
     }
   | { type: 'STREAM_ERROR'; payload: ClientErrorBody }
+  | { type: 'TASK_MODE_SET'; payload: boolean }
+  | {
+      type: 'TASK_EVENT';
+      payload: { sessionId: string; turnId: string; attemptId: string; event: TaskPlanEvent | TaskStepEvent };
+    }
   | { type: 'STREAM_CANCELLED' }
   | { type: 'STREAM_INTERRUPTED' }
   | {

@@ -63,6 +63,9 @@ import { buildReferenceManifest, validateManifest } from '../context/reference-s
 import { defaultEnvironmentContext, estimateMessagesTokens, fixedContextMessages, validateInput } from '../context/context-budget.js';
 import { createModelServices } from '../model/index.js';
 import { CompactionRunner } from '../model/compaction-runner.js';
+import { TaskPlanner, type PlannerTool } from '../model/task-planner.js';
+import { isAnswerOnlyPlan, type TaskPlan, type TaskStepEvent } from '../contracts/task.js';
+import { TaskTracker } from './task-tracker.js';
 import { selectCompactionCutpoint, type CompactionTurn } from '../context/cutpoint.js';
 import type { ActiveSummaryRecord } from '../contracts/agent-memory.js';
 import { buildTurnGraph } from '../agent/turn-graph.js';
@@ -137,7 +140,7 @@ type Entry = { identity: Readonly<ResolvedIdentity>; turn: MemoryTurn; snapshot:
   weatherView?: MessageRecord['weatherView'];
   sourceProvenance?: MessageRecord['sourceProvenance']; initialBudget?: CalendarTurnBudget; native?: NativeExecution; running: boolean; web?: WebTurn;
   webAcceptedAt?: number; webLimits?: import('../contracts/web-search-policy.js').WebSearchLimits;
-  memoryUpdated?: true };
+  memoryUpdated?: true; task?: true; taskSnapshot?: MessageRecord['task'] };
 type Promotion = { lease: ExecutionLease; binding?: CalendarAccountBinding; attempt?: AttemptRecord;
   receipt?: ConfirmedRecord<AttemptRecord>; acceptance?: AcceptanceRecord; graph?: TurnGraph; ledger?: CalendarTurnLedger;
   ready: boolean };
@@ -201,6 +204,7 @@ export class MemoryText {
   private readonly invalidatedAccounts = new Set<string>();
   private readonly compactionJobs = new Set<Promise<void>>();
   private readonly compactionRunner: CompactionRunner;
+  private readonly taskPlanner: TaskPlanner;
   private defaultWeatherProvider: WeatherProvider | null = null;
   constructor(private readonly runtime: DurableChatRuntime, private readonly d: RuntimeDependencies,
     readonly ownerId: string, epoch: string,
@@ -212,6 +216,10 @@ export class MemoryText {
       policy: this.policy, save: options.save ?? this.archive!.save, now: d.now,
       saveVoiceObservation: options.saveVoiceObservation ?? this.archive?.saveVoiceObservation, ...shared });
     this.compactionRunner = new CompactionRunner({
+      putAccounting: d.persistence.metadata.putAccounting.bind(d.persistence.metadata),
+      fetcher: d.fetcher, now: () => this.runtime.now(), report: d.diagnostics?.emit,
+    });
+    this.taskPlanner = new TaskPlanner({
       putAccounting: d.persistence.metadata.putAccounting.bind(d.persistence.metadata),
       fetcher: d.fetcher, now: () => this.runtime.now(), report: d.diagnostics?.emit,
     });
@@ -548,6 +556,7 @@ export class MemoryText {
           graphSchemaVersion: this.d.assets.graphSchemaVersion }, ephemeral);
     if (!this.entries.has(turn.attemptId)) this.entries.set(turn.attemptId, { identity, turn, snapshot, budgets: snapshot.budgets, personalization, clientTimeZone, requestGeo, status: 'accepted', error: null, running: false,
       ...(retry && 'turn' in retry.previous ? { initialBudget: this.foundation.result(retry.previous.turn)?.calendar?.budget } : {}),
+      ...(c.task === true || (retry && 'turn' in retry.previous && retry.previous.task) ? { task: true as const } : {}),
       ...(webAdvertised && webPort ? {
         webAcceptedAt: performance.now(), webLimits: snapshot.settings.webSearch,
       } : {}) });
@@ -752,6 +761,7 @@ export class MemoryText {
       ...(e.calendarMutation ? { calendarMutation: e.calendarMutation } : {}),
       ...(e.calendarView ? { calendarView: e.calendarView } : {}),
       ...(e.weatherView ? { weatherView: e.weatherView } : {}),
+      ...(e.taskSnapshot ? { task: e.taskSnapshot } : {}),
       ...(e.sourceProvenance?.length ? { sourceProvenance: e.sourceProvenance } : {}),
       ...(webProjection?.sources.length ? { webSources: [...webProjection.sources] } : {}),
       ...(webProjection?.activities.length ? { webActivities: [...webProjection.activities] } : {}),
@@ -763,6 +773,7 @@ export class MemoryText {
     // Release credential-bearing settings and the extra observation copy.
     e.snapshot = null; e.personalization = null; e.accounting = undefined; e.delivery = undefined; e.calendar = undefined;
     e.calendarMutation = undefined; e.calendarView = undefined; e.weatherView = undefined; e.sourceProvenance = undefined;
+    e.taskSnapshot = undefined;
     e.native?.ledger.freeze(); e.native = undefined; e.web = undefined;
     if (snap && (status === 'completed' || status === 'truncated')) {
       try { this.scheduleCompactionIfNeeded(e.turn.sessionId, snap); }
@@ -1628,6 +1639,7 @@ export class MemoryText {
       completionStatus: seal.outcome, truncated: seal.outcome === 'truncated', ...assistantFields,
       ...(seal.version === 2 && seal.view ? { calendarView: seal.view } : {}),
       ...(e.weatherView ? { weatherView: e.weatherView } : {}),
+      ...(e.taskSnapshot ? { task: e.taskSnapshot } : {}),
       ...(native.loop.provenance().length ? { sourceProvenance: native.loop.provenance() } : {}) });
     this.foundation.commitPromoted(t, { input, output, manifest: seal.target, ...(e.delivery ? { delivery: e.delivery } : {}) });
     const cold = this.sessions.get(t.sessionId)!;
@@ -1636,7 +1648,7 @@ export class MemoryText {
     cold.pendingProposal = pending?.state === 'pending' ? pending : null;
     cold.attempts.push(promoted.attempt!); e.status = seal.outcome; e.error = null;
     e.snapshot = null; e.personalization = null; e.accounting = undefined; e.delivery = undefined; e.calendar = undefined; e.native = undefined;
-    e.weatherView = undefined;
+    e.weatherView = undefined; e.taskSnapshot = undefined;
   }
   async reconcilePromoted(sessionId: string): Promise<void> {
     const e = [...this.entries.values()].find(entry => entry.turn.sessionId === sessionId &&
@@ -1838,8 +1850,25 @@ export class MemoryText {
     else this.runtime.reservations.assertText(c.userId, c.sessionId);
     if (e.running) throw new AppError('CONFLICT_ACTIVE_TURN', 'Another turn is active.');
     let sequence = 0;
-    const send = (event: StreamEvent) => c.emit(streamEnvelopeSchema.parse({ protocolVersion: 1,
+    const sendRaw = (event: StreamEvent) => c.emit(streamEnvelopeSchema.parse({ protocolVersion: 1,
       sessionId: c.sessionId, turnId: c.turnId, attemptId: c.attemptId, sequence: sequence++, event }));
+    // Task mode: progress is inferred from the turn's own tool activity (no extra model calls).
+    let taskTracker: TaskTracker | null = null;
+    let taskPlan: TaskPlan | null = null;
+    const observeTask = async (event: { type: string; proposalId?: unknown }) => {
+      if (taskTracker) for (const step of taskTracker.observe(event)) await sendRaw(step);
+    };
+    const send = async (event: StreamEvent) => { await sendRaw(event); await observeTask(event); };
+    // Close the task once, before the terminal record is built, so the saved
+    // snapshot (A4) and the streamed closing events agree.
+    let taskClosing: TaskStepEvent[] = [];
+    let taskClosed = false;
+    const closeTask = (outcome: 'completed' | 'failed') => {
+      if (!taskTracker || taskClosed) return;
+      taskClosed = true;
+      taskClosing = taskTracker.finish(outcome);
+      e.taskSnapshot = taskTracker.snapshot();
+    };
     const previous = this.foundation.result(e.turn);
     if (previous) {
       if (c.live) return true; // Replay never speaks again.
@@ -1851,7 +1880,8 @@ export class MemoryText {
           save: this.status(c.userId, c.sessionId, c.turnId)!.save,
           ...(previous.output.calendarView ? { calendarView: previous.output.calendarView } : {}),
           ...(previous.output.weatherView ? { weatherView: previous.output.weatherView } : {}),
-          ...(previous.output.memoryUpdated ? { memoryUpdated: true } : {}) });
+          ...(previous.output.memoryUpdated ? { memoryUpdated: true } : {}),
+          ...(previous.output.task ? { task: previous.output.task } : {}) });
       else if (e.error) await send({ type: 'error', ...e.error.toClientBody() });
       return true;
     }
@@ -1897,7 +1927,10 @@ export class MemoryText {
         ? Buffer.byteLength(JSON.stringify({ calendarView: e.calendarView }), 'utf8') - 1 : 0;
       const weatherEncoded = e.weatherView
         ? Buffer.byteLength(JSON.stringify({ weatherView: e.weatherView }), 'utf8') - 1 : 0;
-      if (proseEncoded > messageProseBudget || proseEncoded + artifactsEncoded + viewEncoded + weatherEncoded > this.policy.maxOutputBytes ||
+      // Saved task snapshot; +128 covers later status-label growth (awaiting_approval is longest).
+      const taskEncoded = taskTracker
+        ? Buffer.byteLength(JSON.stringify({ task: taskTracker.snapshot() }), 'utf8') + 128 : 0;
+      if (proseEncoded > messageProseBudget || proseEncoded + artifactsEncoded + viewEncoded + weatherEncoded + taskEncoded > this.policy.maxOutputBytes ||
           (c.live && 1536 + 2 * proseEncoded + 8 + artifactsEncoded > liveEvidenceMaxBytes)) {
         throw new AppError('STORAGE_BUDGET_EXCEEDED', 'The response exceeded its storage limit.', false);
       }
@@ -1939,13 +1972,33 @@ export class MemoryText {
         return;
       }
       if (frame.event.type === 'calendar-view') e.calendarView = frame.event.view;
-      if (!c.live) { await c.emitCalendar?.(frame); return; }
+      if (!c.live) { await c.emitCalendar?.(frame); await observeTask(frame.event); return; }
       try { void c.emitCalendar?.(frame).catch(() => undefined); }
       catch { /* Presentation cannot fail generation or authority. */ }
     };
     try {
       job.check(); e.status = 'generating';
       await job.wait(send({ type: 'status', status: 'generating', truncated: false }), snapshot.budgets.idleStreamTimeoutMs);
+      // Task mode (text only): one bounded planner call before the normal loop. A
+      // missing/answer-only/failed plan runs this turn as ordinary chat.
+      if (e.task && !c.live && snapshot.modelLimits) {
+        const tools: PlannerTool[] = [
+          ...(snapshot.calendar?.enabled && this.d.calendar && isCalendarV2(this.d.calendar) ? ['calendar' as const] : []),
+          ...(e.web ? ['web' as const] : []),
+          ...(snapshot.modelLimits.tools ? ['environment' as const] : []),
+        ];
+        const { plan } = await this.taskPlanner.plan({ userId: c.userId, sessionId: c.sessionId,
+          turnId: c.turnId, attemptId: c.attemptId, request: e.turn.content, tools,
+          config: { identity: { userId: c.userId }, budgets: snapshot.budgets, openRouter: snapshot.openRouter },
+          limits: snapshot.modelLimits, signal: job.signal });
+        job.check();
+        if (plan && !isAnswerOnlyPlan(plan)) {
+          taskPlan = plan;
+          taskTracker = new TaskTracker(c.attemptId, plan);
+          await job.wait(send({ type: 'task-plan', version: 1, taskId: c.attemptId, plan }),
+            snapshot.budgets.idleStreamTimeoutMs);
+        }
+      }
       let source = this.foundation.context(e.turn);
       const assembler = new ReferencedContextAssembler({ memory: this.d.persistence.memory, messages: this.d.persistence.messages,
         metadata: { getVoiceDelivery: async (_u, s, a) => this.foundation.deliveries(s).find(d => d.attemptId === a) ?? null,
@@ -1954,7 +2007,8 @@ export class MemoryText {
       const assembleOnce = () => assembler.assemble({ userId: c.userId, sessionId: c.sessionId,
         turnId: c.turnId, newUserInput: e.turn.content, responseMode: c.live ? 'voice' : 'text',
         environment: defaultEnvironmentContext(new Date(this.runtime.now()), e.clientTimeZone ?? this.d.calendar?.trustedTimeZone ?? 'Etc/UTC'),
-        personalization: e.personalization ?? defaultPersonalizationSettings() }, source);
+        personalization: e.personalization ?? defaultPersonalizationSettings(),
+        ...(taskPlan ? { taskPlan } : {}) }, source);
       const waitForCompaction = async (running: Promise<unknown>) => {
         await new Promise<void>(resolve => {
           const done = () => { job.signal.removeEventListener('abort', done); resolve(); };
@@ -2596,6 +2650,7 @@ export class MemoryText {
       if (e.native?.loop.memoryWasUpdated()) e.memoryUpdated = true;
       e.status = length ? 'truncated' : 'completed';
       if (!c.live) {
+        closeTask('completed');
         if (promotedSeal) await this.publishPromoted(e, promotedSeal, partial, admittedArtifacts);
         else this.finish(e, partial, e.status);
       }
@@ -2622,7 +2677,7 @@ export class MemoryText {
         e.status = failure.code === 'CANCELLED' ? 'cancelled' : ['INTERRUPTED', 'TIMEOUT'].includes(failure.code) ? 'interrupted' : 'failed';
         e.error = failure;
         if (failure.code === 'PERSISTENCE_ERROR' && e.native) e.native.pending = true;
-        else if (!c.live) this.finish(e, partial, e.status, failure);
+        else if (!c.live) { closeTask('failed'); this.finish(e, partial, e.status, failure); }
       }
     } finally {
       try {
@@ -2661,6 +2716,8 @@ export class MemoryText {
       if (!c.live && usage?.contextUsage)
         await send({ type: 'context-state', contextUsage: usage.contextUsage,
           ...(usage.compaction ? { compaction: usage.compaction } : {}) });
+      closeTask(e.status === 'completed' || e.status === 'truncated' ? 'completed' : 'failed');
+      for (const step of taskClosing) await sendRaw(step);
       await send({ type: 'status', status: e.status, truncated: e.status === 'truncated', save: this.status(c.userId, c.sessionId, c.turnId)?.save });
       if (e.status === 'completed' || e.status === 'truncated')
         await send({ type: 'completed', outcome: e.status, assistantMessageId: e.turn.outputMessageId,
@@ -2670,6 +2727,7 @@ export class MemoryText {
           ...(this.foundation.result(e.turn)?.output.weatherView
             ? { weatherView: this.foundation.result(e.turn)!.output.weatherView } : {}),
           ...(this.foundation.result(e.turn)?.output.memoryUpdated ? { memoryUpdated: true } : {}),
+          ...(taskTracker ? { task: this.foundation.result(e.turn)?.output.task ?? taskTracker.snapshot() } : {}),
           ...(!c.live && usage?.compaction ? { compaction: usage.compaction } : {}),
           ...(!c.live && usage?.contextUsage ? { contextUsage: usage.contextUsage } : {}) });
       else if (e.error) await send({ type: 'error', ...e.error.toClientBody() });

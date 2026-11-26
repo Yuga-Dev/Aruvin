@@ -23,6 +23,7 @@
  */
 
 import { memo, useEffect, useMemo, useState } from 'react';
+import { TaskCard } from './TaskCard.tsx';
 import type { VisibleMessage } from '../api/protocol.ts';
 import { isWeatherView } from '../api/weather-protocol.ts';
 import {
@@ -225,6 +226,7 @@ export const MessageItem = memo(function MessageItem({
         </>
       ) : (
         <div className="aurvin-message-body">
+          {message.task ? <TaskCard task={message.task} /> : null}
           {generatingClassName ? (
             <span className={generatingClassName}>Generating…</span>
           ) : (

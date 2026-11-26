@@ -173,6 +173,7 @@ export type MemoryTerminal = {
   calendarMutation?: MemoryCalendarMutation;
   calendarView?: MessageRecord['calendarView'];
   weatherView?: MessageRecord['weatherView'];
+  task?: MessageRecord['task'];
   sourceProvenance?: MessageRecord['sourceProvenance'];
   webSources?: MessageRecord['webSources'];
   webActivities?: MessageRecord['webActivities'];
@@ -262,7 +263,7 @@ function terminalEnvelope(turn: MemoryTurn, status: MemoryTerminal['status'], co
   webSources?: MessageRecord['webSources'], webActivities?: MessageRecord['webActivities'],
   weatherView?: MessageRecord['weatherView'],
   pinnedUserMemory?: AgentMemoryManifest['pinnedUserMemory'],
-  memoryUpdated?: boolean): TerminalEnvelope {
+  memoryUpdated?: boolean, task?: MessageRecord['task']): TerminalEnvelope {
   const scope = { userId: turn.userId, sessionId: turn.sessionId, turnId: turn.turnId, attemptId: turn.attemptId };
   const base = { schemaVersion: 1, ...scope, createdAt: turn.createdAt, truncated: status === 'truncated',
     mode: turn.mode, ...(turn.voice ? { visibility: 'internal', voiceSessionId: turn.voice.voiceSessionId } : {}) };
@@ -279,6 +280,7 @@ function terminalEnvelope(turn: MemoryTurn, status: MemoryTerminal['status'], co
     ...(webSources?.length ? { webSources } : {}),
     ...(webActivities?.length ? { webActivities } : {}),
     ...(memoryUpdated === true ? { memoryUpdated: true } : {}),
+    ...(task ? { task } : {}),
     messageId: turn.outputMessageId, eventId: turn.outputEventId, sequence: turn.sequence + 1,
     completionStatus: status });
   return { schemaVersion: 1, epoch: turn.epoch, userId: turn.userId, sessionId: turn.sessionId,
@@ -660,7 +662,7 @@ export class MemoryFirstFoundation {
     const minimal = terminalEnvelope(turn, status, '', null, null, undefined, undefined, undefined, undefined, undefined, s.pinnedUserMemory);
     const envelope = freeze({ ...terminalEnvelope(turn, status, value.content, accounting, delivery,
       value.calendarView, value.sourceProvenance, value.webSources, value.webActivities, value.weatherView,
-      s.pinnedUserMemory, value.memoryUpdated),
+      s.pinnedUserMemory, value.memoryUpdated, value.task),
       ...(calendar ? { calendar } : {}),
       ...(calendarIntegrity ? { calendarIntegrity } : {}),
       ...(calendarMutation ? { calendarMutation } : {}),

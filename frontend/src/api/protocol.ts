@@ -37,6 +37,10 @@ import {
   type WebSourceReference,
 } from './web-search-protocol.ts'
 import { isWeatherView, type WeatherView } from './weather-protocol.ts'
+import {
+  isTaskPlanEvent, isTaskSnapshot, isTaskStepEvent,
+  type TaskPlanEvent, type TaskSnapshot, type TaskStepEvent,
+} from './task-protocol.ts'
 
 export type { CanvasArtifactProjection }
 
@@ -87,6 +91,8 @@ export type SubmitTurnRequest = {
   expectedEpoch?: string
   calendarProtocol?: 2
   calendarReplyTo?: { proposalId: string; revision: number }
+  /** Task mode: the server plans first, then runs the normal tool loop. */
+  task?: true
 }
 
 export type SubmitTurnResponse = {
@@ -159,6 +165,8 @@ export type VisibleMessage = {
   webSources?: WebSourceReference[]
   webActivities?: WebSearchActivity[]
   memoryUpdated?: boolean
+  /** Task-mode plan and final step states (live and restored from history). */
+  task?: TaskSnapshot
 }
 
 export type ActiveSessionTurn = {
@@ -234,6 +242,7 @@ export type StreamEvent =
       compaction?: CompactionCheckpointMeta
       contextUsage?: ContextUsageMeta
       memoryUpdated?: boolean
+      task?: TaskSnapshot
     }
   | {
       type: 'context-state'
@@ -243,6 +252,8 @@ export type StreamEvent =
   | { type: 'web-activity'; activity: WebSearchActivity }
   | { type: 'web-sources'; sources: WebSourceReference[] }
   | { type: 'weather-view'; view: WeatherView }
+  | TaskPlanEvent
+  | TaskStepEvent
 
 export type StreamEnvelope = {
   protocolVersion: 1
@@ -331,6 +342,11 @@ function hasValidWeatherView(value: Record<string, unknown>): boolean {
   return value.role === 'assistant' && isWeatherView(value.weatherView)
 }
 
+function hasValidTask(value: Record<string, unknown>): boolean {
+  if (!('task' in value) || value.task === undefined) return true
+  return value.role === 'assistant' && isTaskSnapshot(value.task)
+}
+
 function hasValidMemoryUpdated(value: Record<string, unknown>): boolean {
   if (!('memoryUpdated' in value) || value.memoryUpdated === undefined) return true
   return value.role === 'assistant' && typeof value.memoryUpdated === 'boolean'
@@ -363,7 +379,8 @@ export function isVisibleMessage(value: unknown): value is VisibleMessage {
     typeof value.truncated === 'boolean' &&
     hasValidWebProvenance(value) &&
     hasValidWeatherView(value) &&
-    hasValidMemoryUpdated(value)
+    hasValidMemoryUpdated(value) &&
+    hasValidTask(value)
   )
 }
 
@@ -480,8 +497,10 @@ export function isSubmitTurnRequest(body: unknown): body is SubmitTurnRequest {
     ...('ephemeral' in body ? ['ephemeral'] : []),
     ...('expectedEpoch' in body ? ['expectedEpoch'] : []),
     ...('calendarProtocol' in body ? ['calendarProtocol'] : []),
-    ...('calendarReplyTo' in body ? ['calendarReplyTo'] : [])]) ||
+    ...('calendarReplyTo' in body ? ['calendarReplyTo'] : []),
+    ...('task' in body ? ['task'] : [])]) ||
     ('ephemeral' in body && typeof body.ephemeral !== 'boolean') ||
+    ('task' in body && body.task !== true) ||
     ('calendarProtocol' in body && body.calendarProtocol !== 2)) {
     return false
   }
@@ -626,7 +645,9 @@ export function isStreamEvent(value: unknown): value is StreamEvent {
           ...('webActivities' in value ? ['webActivities'] : []),
           ...('compaction' in value ? ['compaction'] : []),
           ...('contextUsage' in value ? ['contextUsage'] : []),
-          ...('memoryUpdated' in value ? ['memoryUpdated'] : [])]) &&
+          ...('memoryUpdated' in value ? ['memoryUpdated'] : []),
+          ...('task' in value ? ['task'] : [])]) &&
+        (!('task' in value) || isTaskSnapshot(value.task)) &&
         (!('save' in value) || isSaveStateSnapshot(value.save)) &&
         (!('calendarView' in value) || isCalendarView(value.calendarView)) &&
         (!('weatherView' in value) || isWeatherView(value.weatherView)) &&
@@ -654,6 +675,10 @@ export function isStreamEvent(value: unknown): value is StreamEvent {
       return hasExactKeys(value, ['type', 'sources']) && isWebSourceReferenceList(value.sources)
     case 'weather-view':
       return hasExactKeys(value, ['type', 'view']) && isWeatherView(value.view)
+    case 'task-plan':
+      return isTaskPlanEvent(value)
+    case 'task-step':
+      return isTaskStepEvent(value)
     default:
       return false
   }
