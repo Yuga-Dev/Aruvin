@@ -30,6 +30,7 @@ import {
   assertNoClientOverrides,
   isCompactionCheckpointMeta,
   isContextUsageMeta,
+  isFeedbackResponse,
   isRetryTurnRequest,
   isSubmitTurnRequest,
   isSubmitTurnResponse,
@@ -233,6 +234,7 @@ export class ApiClient {
     path: string,
     init: RequestInit = {},
     params?: Record<string, string | number | null | undefined>,
+    parseAs: 'json' | 'blob' = 'json',
   ): Promise<T> {
     let response: Response;
     try {
@@ -283,7 +285,7 @@ export class ApiClient {
       return undefined as T;
     }
 
-    return (await response.json()) as T;
+    return (parseAs === 'blob' ? await response.blob() : await response.json()) as T;
   }
 
   async listSessions(options?: {
@@ -484,12 +486,22 @@ export class ApiClient {
     throw notImplemented('Regenerate');
   }
 
-  async putFeedback(_sessionId: string, _messageId: string, _rating: FeedbackRating | null): Promise<FeedbackResponse> {
-    throw notImplemented('Feedback');
+  async putFeedback(sessionId: string, messageId: string, rating: FeedbackRating | null): Promise<FeedbackResponse> {
+    if (!isBoundedClientId(sessionId) || !isBoundedClientId(messageId)) {
+      throw new ApiClientError('INVALID_REQUEST', 'Invalid feedback target.', 400, false);
+    }
+    const response = await this.request<unknown>(API_ROUTES.messageFeedback(sessionId, messageId), {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rating }),
+    });
+    if (!isFeedbackResponse(response)) {
+      throw new ApiClientError('INVALID_RESPONSE', 'Feedback outcome could not be confirmed.', 0, false);
+    }
+    return response;
   }
 
-  async exportSession(_sessionId: string): Promise<Blob> {
-    throw notImplemented('Export');
+  async exportSession(sessionId: string): Promise<Blob> {
+    if (!isBoundedClientId(sessionId)) throw new ApiClientError('INVALID_REQUEST', 'Invalid chat.', 400, false);
+    return this.request<Blob>(API_ROUTES.exportSession(sessionId), { method: 'GET' }, undefined, 'blob');
   }
 
   async getTurnStatus(sessionId: string, turnId: string): Promise<TurnStatusResponse> {

@@ -34,6 +34,7 @@ import {
 } from '../features/canvas/index.ts';
 import { parseCalendarConfirmationDetails } from '../features/plugins/google-calendar/CalendarTurnRegion.tsx';
 import { WebSearchActivityView } from '../features/plugins/web-search/index.ts';
+import { copyTextToClipboard } from '../features/chat/markdown/copy-text.ts';
 import { SafeMarkdown } from '../features/chat/markdown/safe-markdown.tsx';
 import { IconCheck, IconCopy } from './icons.tsx';
 import { getMessagePresentation } from './message-presentation.ts';
@@ -41,17 +42,8 @@ import { formatVoiceDuration, VoiceTranscriptModal } from './VoiceTranscriptModa
 
 const COPIED_FEEDBACK_MS = 1800;
 
-export async function copyTextToClipboard(text: string): Promise<boolean> {
-  try {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // Clipboard API unavailable in non-secure or headless context
-  }
-  return false;
-}
+// oxlint-disable-next-line react/only-export-components -- shared helper re-exported for existing callers
+export { copyTextToClipboard };
 
 function CopyMessageButton({
   text,

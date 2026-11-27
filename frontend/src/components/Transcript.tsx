@@ -17,6 +17,7 @@
  *    - MessageItem list with an inline compaction divider
  *    - Streaming assistant placeholder
  *    - Inline turn extensions (e.g. Calendar activity)
+ *    - Feedback buttons slot (flag-gated, saved assistant messages only)
  * ============================================================================
  */
 
@@ -26,6 +27,8 @@ import { useChat } from '../features/chat/state/chat-context.tsx';
 import { nextMessageSequence } from '../features/chat/state/chat-reducer.ts';
 import { hideCalendarConfirmReplies } from '../features/plugins/google-calendar/CalendarTurnRegion.tsx';
 import { groupVoiceMessages } from './group-voice-messages.ts';
+import { FEATURE_FLAGS } from '../app/feature-flags.ts';
+import { FeedbackButtons, isFeedbackEligible } from './FeedbackButtons.tsx';
 import { MessageItem } from './MessageItem.tsx';
 import { PromptTraveler } from './PromptTraveler.tsx';
 import { TaskCard } from './TaskCard.tsx';
@@ -133,6 +136,15 @@ export function Transcript({
     [state.messages],
   );
 
+  const feedbackSlot = (message: VisibleMessage) => {
+    const sessionId = state.activeSessionId;
+    if (!FEATURE_FLAGS.feedback || !sessionId || state.activeSessionTemporary || !isFeedbackEligible(message)) return undefined;
+    const save = state.saves?.[sessionId];
+    const saved = !(save && save.turnId === message.turnId && save.value.state !== 'saved');
+    return <FeedbackButtons key={message.messageId} sessionId={sessionId} messageId={message.messageId}
+      initial={message.feedback} saved={saved} />;
+  };
+
   const compaction = state.compaction ?? null;
   const dividerAfterIndex = useMemo(
     () => findCompactionDividerIndex(displayMessages, compaction),
@@ -179,6 +191,7 @@ export function Transcript({
                   : message
               }
               {...messageActions}
+              actionsEnd={feedbackSlot(message)}
             />
             {dividerAfterIndex === index && compaction ? (
               <CompactionDivider key={dividerKey} compaction={compaction} />

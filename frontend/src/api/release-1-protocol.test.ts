@@ -54,8 +54,6 @@ describe('release 1 protocol mirrors', () => {
   it('keeps client stubs inert and the four flags off', async () => {
     const client = new ApiClient({ fetch: () => { throw new Error("must not call network") } })
     await expect(client.searchSessions('hello')).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' })
-    await expect(client.putFeedback('s', 'm', 'up')).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' })
-    await expect(client.exportSession('s')).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' })
     expect([FEATURE_FLAGS.conversationSearch, FEATURE_FLAGS.messageEdit, FEATURE_FLAGS.feedback,
       FEATURE_FLAGS.exportMarkdown]).toEqual([false, false, false, false])
   })
