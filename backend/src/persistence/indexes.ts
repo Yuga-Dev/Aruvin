@@ -385,10 +385,23 @@ const EPHEMERAL_SESSION_SWEEP_INDEX: AppIndex = {
 
 export async function setupIndexes(db: Db): Promise<void> {
   try {
-    for (const index of [...APP_INDEXES, EPHEMERAL_SESSION_SWEEP_INDEX, ...CALENDAR_INDEXES, ...WEB_SEARCH_INDEXES, ...SEARCH_INDEXES, ...FEEDBACK_INDEXES]) {
+    for (const index of [...APP_INDEXES, EPHEMERAL_SESSION_SWEEP_INDEX, ...CALENDAR_INDEXES, ...WEB_SEARCH_INDEXES, ...SEARCH_INDEXES, ...FEEDBACK_INDEXES, ...MEMORY_AUDIT_INDEXES]) {
       await db.collection(index.collection).createIndex(index.keys, index.options);
     }
   } catch {
     throw new AppError('NOT_READY', 'Chat storage setup failed.');
   }
 }
+
+export const MEMORY_AUDIT_INDEXES: AppIndex[] = [
+  {
+    collection: 'metadata',
+    keys: { userId: 1, kind: 1, memoryRevision: -1 },
+    options: { name: 'user_kind_revision' },
+  },
+  {
+    collection: 'metadata',
+    keys: { userId: 1, kind: 1, requestId: 1 },
+    options: { name: 'user_kind_request' },
+  },
+];

@@ -143,3 +143,38 @@ it('does not start an idle synthesis once memory is disabled', async () => {
   expect(f.synthesize).not.toHaveBeenCalled();
   expect(f.publish).not.toHaveBeenCalled();
 });
+
+it('user delete drops queued passive turns and advances the watermark', async () => {
+  const f = fixture();
+  f.scheduler.completed(u, s, 0, turn(1));
+  f.scheduler.completed(u, s, 0, turn(2));
+  f.scheduler.completed('other', s, 0, turn(1));
+  f.scheduler.userChanged(u);
+  await vi.advanceTimersByTimeAsync(idle * 2);
+  expect(f.synthesize).toHaveBeenCalledTimes(1); // only the other user's turn
+  expect(f.synthesize.mock.calls[0]![0]).toBe('other');
+  f.scheduler.completed(u, s, 0, turn(2)); // dropped turn is not replayed
+  await vi.advanceTimersByTimeAsync(idle * 2);
+  expect(f.synthesize).toHaveBeenCalledTimes(1);
+  f.scheduler.completed(u, s, 0, turn(3)); // facts stated again later are learned again
+  await vi.advanceTimersByTimeAsync(idle);
+  expect(f.synthesize).toHaveBeenCalledTimes(2);
+  expect(f.synthesize.mock.calls[1]![1]).toEqual([
+    { role: 'user', content: 'User 3' }, { role: 'assistant', content: 'Assistant 3' }]);
+});
+
+it('user delete aborts a running batch and the slot keeps working afterwards', async () => {
+  const f = fixture();
+  const held = Promise.withResolvers<{ changed: boolean }>();
+  f.synthesize.mockReturnValueOnce(held.promise);
+  f.scheduler.completed(u, s, 0, turn(1));
+  await vi.advanceTimersByTimeAsync(idle);
+  const signal = f.synthesize.mock.calls[0]![2].signal!;
+  f.scheduler.userChanged(u);
+  expect(signal.aborted).toBe(true);
+  f.scheduler.completed(u, s, 0, turn(2));
+  held.resolve({ changed: true });
+  await vi.advanceTimersByTimeAsync(idle * 2);
+  expect(f.publish).toHaveBeenCalledTimes(1); // no late projection of the aborted batch
+  expect(f.publish.mock.calls[0]![2]).toEqual(turn(2));
+});
