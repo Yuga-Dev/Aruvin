@@ -30,6 +30,10 @@ import type { FeedbackRating, FeedbackResponse, SearchSessionsQuery, SearchSessi
 export type SearchPort = { search(userId: string, query: SearchSessionsQuery): Promise<SearchSessionsResponse> };
 export type FeedbackPort = {
   put(userId: string, sessionId: string, messageId: string, rating: FeedbackRating | null): Promise<FeedbackResponse>;
+  /** Caller's own ratings for a page of message ids. */
+  ratings?(userId: string, sessionId: string, messageIds: string[]): Promise<Map<string, FeedbackRating>>;
+  /** Remove a deleted chat's ratings. */
+  removeSession?(userId: string, sessionId: string): Promise<void>;
 };
 export type ChatHttpOptions = {
   runtime: ChatRuntime;

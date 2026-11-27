@@ -309,3 +309,45 @@ describe('streaming partial tables and lists', () => {
     expect(parseMarkdown('- a\n  - ')[0]).toMatchObject({ type: 'bullet_list' });
   });
 });
+
+describe('Release 1 rendering polish', () => {
+  const html = (content: string) => renderToStaticMarkup(createElement(SafeMarkdown, { content }));
+
+  it('renders horizontal rules and strikethrough', () => {
+    expect(parseMarkdown('a\n\n---\n\n* * *\n\nb').map((t) => t.type)).toEqual(['paragraph', 'hr', 'hr', 'paragraph']);
+    const out = html('before\n\n---\n\n~~gone~~ kept');
+    expect(out).toContain('<hr class="aurvin-hr"/>');
+    expect(out).toContain('<del>gone</del> kept');
+    expect(html('- item\n- other')).not.toContain('<hr');
+  });
+
+  it('renders task lists as inert checkboxes', () => {
+    const out = html('- [x] done\n- [ ] todo\n- plain');
+    expect(out.match(/<input type="checkbox"[^>]*>/g)).toHaveLength(2);
+    expect(out.match(/disabled/g)).toHaveLength(2);
+    expect(out).toContain('checked');
+    expect(out).not.toContain('[x]');
+  });
+
+  it('code block has a language label and copy button', () => {
+    const out = html('```ts\nconst x = 1;\n```');
+    expect(out).toContain('<span class="aurvin-code-lang">ts</span>');
+    expect(out).toContain('aria-label="Copy code"');
+    expect(html('```\nx\n```')).toContain('<span class="aurvin-code-lang">code</span>');
+  });
+
+  it('unterminated fence stays safe while streaming', () => {
+    const out = html('```js\n<script>alert(1)</script>\nlet a = 1');
+    expect(out).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(out).not.toContain('<script');
+    expect(out).toContain('aurvin-code-block');
+  });
+
+  it('raw HTML is still escaped', () => {
+    const out = html('<img src=x onerror=alert(1)> and [x](javascript:alert(1)) ~~<b>y</b>~~');
+    expect(out).not.toContain('<img');
+    expect(out).not.toContain('<b>');
+    expect(out).not.toContain('href="javascript');
+    expect(out).toContain('&lt;img');
+  });
+});

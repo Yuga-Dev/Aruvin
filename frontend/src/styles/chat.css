@@ -497,6 +497,21 @@
   margin-top: 4px;
 }
 
+.aurvin-feedback-btn[disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.aurvin-feedback-btn[data-active='true'] {
+  color: var(--aurvin-text-primary);
+}
+
+.aurvin-feedback-error {
+  font-size: 12px;
+  color: var(--aurvin-danger);
+  margin-left: 6px;
+}
+
 .aurvin-copy-btn:hover,
 .aurvin-copy-btn:focus-visible {
   background-color: var(--aurvin-hover-strong);
@@ -736,10 +751,62 @@
 }
 
 .aurvin-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
   font-size: 12px;
   color: var(--aurvin-text-secondary);
-  padding: 8px 14px;
+  padding: 4px 8px 4px 14px;
   border-bottom: 1px solid var(--aurvin-border);
+}
+
+.aurvin-code-copy {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: var(--aurvin-text-secondary);
+  cursor: pointer;
+}
+
+.aurvin-code-copy:hover,
+.aurvin-code-copy:focus-visible {
+  background-color: var(--aurvin-hover-strong);
+  color: var(--aurvin-text-primary);
+}
+
+.aurvin-code-block pre {
+  max-width: none;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.aurvin-hr {
+  border: 0;
+  border-top: 1px solid var(--aurvin-border);
+  margin: 1.2em 0;
+}
+
+.aurvin-markdown del {
+  color: var(--aurvin-text-secondary);
+}
+
+.aurvin-list > li.aurvin-task-item {
+  list-style: none;
+  margin-left: -1.2em;
+}
+
+.aurvin-task-item > input[type='checkbox'] {
+  margin-right: 0.5em;
+  pointer-events: none;
+}
+
+.aurvin-markdown p,
+.aurvin-markdown li,
+.aurvin-markdown td,
+.aurvin-markdown th {
+  overflow-wrap: anywhere;
 }
 
 .aurvin-markdown code {
@@ -1244,6 +1311,50 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.aurvin-chat-menu {
+  position: relative;
+}
+
+.aurvin-chat-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 190px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--aurvin-border);
+  background: var(--aurvin-surface-elevated);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  z-index: 40;
+}
+
+.aurvin-chat-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--aurvin-text-primary);
+  cursor: pointer;
+}
+
+.aurvin-chat-menu-item:hover:not([disabled]),
+.aurvin-chat-menu-item:focus-visible {
+  background-color: var(--aurvin-hover);
+}
+
+.aurvin-chat-menu-item[disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.aurvin-chat-menu-error {
+  margin: 4px 10px 6px;
+  font-size: 12px;
+  color: var(--aurvin-danger);
 }
 
 .aurvin-canvas-header-btn {

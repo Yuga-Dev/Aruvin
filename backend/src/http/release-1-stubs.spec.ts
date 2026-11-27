@@ -19,7 +19,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { SearchHttpService } from './search-http.service.js';
 import { RevisionHttpService } from './revision-http.service.js';
 import { FeedbackHttpService } from './feedback-http.service.js';
-import { ExportHttpService } from './export-http.service.js';
 import { NOOP_FEATURE_PORTS } from './noop-ports.js';
 import type { ChatHttpOptions } from './options.js';
 
@@ -54,10 +53,9 @@ describe('release 1 stubs', () => {
     await s.regenerate('s', 't', { idempotencyKey: 'idem-key-2' }).catch(() => undefined);
     expect(reviseTurn.mock.calls.map(([c]) => [c.kind, c.turnId, c.identity.userId])).toEqual([['edit', 't', 'user_1'], ['regenerate', 't', 'user_1']]);
   });
-  it('feedback and export refuse instead of succeeding', async () => {
+  it('feedback refuses instead of succeeding', async () => {
     const f = new FeedbackHttpService(wired);
     await expect(f.put('s', 'm', { rating: 'sideways' })).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
     await expect(f.put('s', 'm', { rating: 'up' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
-    await expect(new ExportHttpService(base).export('s')).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 });

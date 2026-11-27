@@ -15,15 +15,17 @@
  * KEY COMPONENTS:
  *    - renderInlineText: Bold, italic, code, markdown links, and labeled bare URLs.
  *    - SafeMarkdown: Token-to-DOM renderer for progressive stream content.
+ *    - CodeCopyButton: Copy control in every code block header (stable height while streaming).
  * ============================================================================
  */
 
-import { memo, useMemo, type ReactNode } from 'react';
+import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   CanvasArtifactCard,
 } from '../../canvas/index.ts';
 import { prepareCanvasMarkdown } from '../../canvas/canvas-artifacts.ts';
 import type { MarkdownListItem, MarkdownToken } from './parse-markdown.ts';
+import { copyTextToClipboard } from './copy-text.ts';
 import { sanitizeUrl } from './sanitize-url.ts';
 
 const MATH_SYMBOLS: Record<string, string> = {
@@ -312,7 +314,7 @@ function linkifyPlainText(text: string, keyPrefix: string): ReactNode[] {
 
 function formatInlineStyles(text: string, keyPrefix: string): ReactNode {
   const nodes: ReactNode[] = [];
-  const regex = /(`[^`]+`|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\\\((?:(?!\\\))[\s\S])+$|\$\$[^$]+\$\$|\$(?!\s)(?:\\.|[^$\\\n])+?(?<!\s)\$(?!\d)|\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*\n]+\*)/g;
+  const regex = /(`[^`]+`|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\\\((?:(?!\\\))[\s\S])+$|\$\$[^$]+\$\$|\$(?!\s)(?:\\.|[^$\\\n])+?(?<!\s)\$(?!\d)|~~[^~\n]+~~|\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*\n]+\*)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   let index = 0;
@@ -349,6 +351,12 @@ function formatInlineStyles(text: string, keyPrefix: string): ReactNode {
         <span key={`${keyPrefix}-ms-${index}`} className="aurvin-math">
           {renderMathInline(token.slice(1, -1).trim(), `${keyPrefix}-ms-${index}`)}
         </span>,
+      );
+    } else if (token.startsWith('~~')) {
+      nodes.push(
+        <del key={`${keyPrefix}-s-${index}`}>
+          {formatInlineStyles(token.slice(2, -2), `${keyPrefix}-s-${index}`)}
+        </del>,
       );
     } else if (token.startsWith('***')) {
       nodes.push(
@@ -449,15 +457,38 @@ export function SafeMarkdown({
   );
 }
 
+function CodeCopyButton({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1800);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+  return (
+    <button type="button" className="aurvin-code-copy" aria-label={copied ? 'Copied' : 'Copy code'}
+      onClick={() => { void copyTextToClipboard(code).then((ok) => { if (ok) setCopied(true); }); }}>
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
+
 function renderListItems(items: MarkdownListItem[]): ReactNode {
-  return items.map((item, itemIdx) => (
-    <li key={itemIdx}>
-      {renderInlineText(item.text)}
+  return items.map((item, itemIdx) => {
+    // Read-only task-list checkbox: inert, never a form control the user can toggle.
+    const task = /^\[([ xX])\]\s+(.*)$/s.exec(item.text);
+    return (
+    <li key={itemIdx} className={task ? 'aurvin-task-item' : undefined}>
+      {task ? (
+        <input type="checkbox" disabled readOnly checked={task[1] !== ' '} tabIndex={-1}
+          aria-label={task[1] !== ' ' ? 'Done' : 'Not done'} />
+      ) : null}
+      {renderInlineText(task ? task[2] ?? '' : item.text)}
       {item.children.map((child, childIdx) => (
         <MarkdownTokenContent key={childIdx} token={child} idx={childIdx} />
       ))}
     </li>
-  ));
+    );
+  });
 }
 
 // Prefix token identity survives stream appends. Keep inline/math rendering out
@@ -480,12 +511,17 @@ const MarkdownTokenContent = memo(function MarkdownTokenContent({ token, idx }: 
     case 'code_block':
       return (
         <div className="aurvin-code-block">
-          {token.lang ? <div className="aurvin-code-header">{token.lang}</div> : null}
+          <div className="aurvin-code-header">
+            <span className="aurvin-code-lang">{token.lang || 'code'}</span>
+            <CodeCopyButton code={token.code} />
+          </div>
           <pre><code>{token.code}</code></pre>
         </div>
       );
     case 'math_block':
       return renderMathBlock(token.expression, `math-block-${idx}`);
+    case 'hr':
+      return <hr className="aurvin-hr" />;
     case 'blockquote':
       return <blockquote className="aurvin-blockquote">{renderInlineText(token.text)}</blockquote>;
     case 'bullet_list':

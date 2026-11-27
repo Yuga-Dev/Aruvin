@@ -24,6 +24,7 @@ export type MarkdownToken =
   | { type: 'code_block'; lang: string; code: string }
   | { type: 'math_block'; expression: string }
   | { type: 'blockquote'; text: string }
+  | { type: 'hr' }
   | { type: 'bullet_list'; items: MarkdownListItem[] }
   | { type: 'ordered_list'; items: MarkdownListItem[]; start?: number }
   | {
@@ -43,6 +44,7 @@ export const MAX_LIST_DEPTH = 6;
 
 const LIST_MARKER = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
 const TABLE_DELIMITER_CELL = /^:?-+:?$/;
+const HORIZONTAL_RULE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 const BLOCK_START = /^\s*(```|#{1,6}\s|>|\\\[|\$\$)/;
 
 function expandTabs(line: string): string {
@@ -278,6 +280,11 @@ function parseLines(
         level: headingMatch[1].length,
         text: headingMatch[2].trim(),
       });
+      continue;
+    }
+
+    if (HORIZONTAL_RULE.test(line)) {
+      tokens.push({ type: 'hr' });
       continue;
     }
 

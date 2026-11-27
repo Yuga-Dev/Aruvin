@@ -382,7 +382,10 @@ export const SEARCH_INDEXES: AppIndex[] = [
     options: { name: 'user_content_text', default_language: 'none' },
   },
 ];
-export const FEEDBACK_INDEXES: AppIndex[] = [];
+export const FEEDBACK_INDEXES: AppIndex[] = [
+  { collection: 'metadata', keys: { userId: 1, sessionId: 1, kind: 1, messageId: 1 },
+    options: { name: 'scope_kind_message' } },
+];
 
 // Cross-user native retention scan; not part of the existing intersection index set.
 const EPHEMERAL_SESSION_SWEEP_INDEX: AppIndex = {

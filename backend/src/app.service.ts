@@ -111,6 +111,7 @@ import { OperationsService, Telemetry, observePersistence, writeStdoutLog } from
 import { boundedResult } from './operations/bounded.js';
 import type { ChatHttpOptions, ChatStreamTransport } from './http/index.js';
 import { NOOP_FEATURE_PORTS } from './http/noop-ports.js';
+import { MongoFeedback } from './persistence/feedback.js';
 import { finishLocalMaintenanceForUsers } from './operations/local-recovery.js';
 import { EPHEMERAL_SESSION_MAX_AGE_MS } from './persistence/sessions.js';
 import { MongoSearch } from './persistence/search.js';
@@ -1262,7 +1263,16 @@ export class AppService {
         if (!p) throw new AppError('SEARCH_UNAVAILABLE', 'Search is unavailable.');
         return new MongoSearch(p.sessions.store).search(userId, query);
       } },
+      feedback: this.feedbackPort(),
       ...(voice ? { executionReservations: voice.reservations } : {}),
+    };
+  }
+  private feedbackPort(): NonNullable<ChatHttpOptions['feedback']> {
+    const repo = () => new MongoFeedback(this.store().owner.store, this.store().messages, this.config.budgets);
+    return {
+      put: (u, s, m, r) => repo().put(u, s, m, r),
+      ratings: (u, s, ids) => repo().ratings(u, s, ids),
+      removeSession: (u, s) => repo().removeSession(u, s),
     };
   }
   private voiceRuntime(): (VoiceBridgeRuntime & { reservations: ExecutionReservationPort & { assertText(userId: string, sessionId: string): void } }) | null {

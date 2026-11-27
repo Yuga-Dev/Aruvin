@@ -62,6 +62,8 @@ import { restoreLiveDraftFocus } from '../voice/live/live-voice-lifecycle.ts';
 import { LiveVoicePanel } from '../voice/live/LiveVoicePanel.tsx';
 import { showsLiveVoice, type LiveDraft } from '../voice/state/live-voice-reducer.ts';
 import type { LiveVoiceSurface } from '../voice/state/useLiveVoice.ts';
+import { FEATURE_FLAGS } from '../../app/feature-flags.ts';
+import { ExportMenu } from './ExportMenu.tsx';
 import { useChat } from './state/chat-context.tsx';
 import { canToggleTemporaryChat, describeTurnError } from './state/chat-reducer.ts';
 import type { ChatState } from './state/chat-types.ts';
@@ -162,6 +164,7 @@ export function ChatView(props: {
   const isEmpty = !state.activeSessionId && state.messages.length === 0 && !state.isStreaming;
   const liveActive = liveVoice ? showsLiveVoice(liveVoice.view) : false;
   const tempHeader = getTemporaryChatHeaderState(state, liveActive);
+  const showExportMenu = FEATURE_FLAGS.exportMarkdown && !liveActive && !state.activeSessionTemporary && Boolean(state.activeSessionId);
   const rawNotice = liveVoice?.view.notice ?? null;
   const visibleNotice = rawNotice && rawNotice !== hiddenNotice ? rawNotice : null;
   const mainRef = useRef<HTMLElement | null>(null);
@@ -622,8 +625,12 @@ export function ChatView(props: {
             </button>
           </div>
 
-          {tempHeader.showToggle || tempHeader.showActivePill || (sessionArtifacts.length > 0 && !liveActive) ? (
+          {tempHeader.showToggle || tempHeader.showActivePill || showExportMenu || (sessionArtifacts.length > 0 && !liveActive) ? (
             <div className="aurvin-header-right">
+              {showExportMenu && state.activeSessionId ? (
+                <ExportMenu sessionId={state.activeSessionId} empty={state.messages.length === 0}
+                  title={state.sessions.find((s) => s.sessionId === state.activeSessionId)?.title ?? 'chat'} />
+              ) : null}
               {tempHeader.showActivePill ? (
                 <span className="aurvin-compaction-pill aurvin-temp-chat-pill" role="status">
                   Temporary chat — not saved, memory off
