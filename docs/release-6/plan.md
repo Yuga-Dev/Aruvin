@@ -1,6 +1,6 @@
 # Release 6 plan: Everyday integrations
 
-**Status:** Proposed 27 November 2026, awaiting user decisions (section 11). Nothing here is implemented or approved. **Branch:** `codex/release-6-plan`, based on main `a38f1da`.
+**Status:** Decisions D1–D13 accepted as recommended by the user on 27 November 2026 (section 11). Nothing here is implemented yet. **Branch:** planning merged from `codex/release-6-plan`, based on main `a38f1da`.
 
 Work order follows [release-plan.md](../roadmap/release-plan.md): contracts, backend, database and indexes, API and events, frontend, states, security, tests, docs, verification. User-visible capabilities stay behind `frontend/src/app/feature-flags.ts` (and a backend plugin setting) until release verification passes. Current status of everything else is in [feature-status.md](../roadmap/feature-status.md). Format precedent: [Release 1 plan](../release-1/plan.md).
 
@@ -204,7 +204,9 @@ Parallel plan: U0 first (one agent). Then A, B and C in parallel (3 agents). D a
 
 **What must be true before implementation:** the decisions above are accepted; Calendar change is verified (this is the proving ground for the approval/recovery pattern); the Google OAuth app type and consent-screen status are known (test users vs verified); a Google primary-documentation review of scopes, quotas and read-back semantics is recorded; a retention and deletion statement exists; the prompt-injection test fixtures (hostile email/document text attempting to trigger a send or share) are written first.
 
-## 11. Open decisions for the user
+## 11. Decisions
+
+**Accepted 27 November 2026:** the user accepted every recommendation below as written.
 
 | # | Decision | Options | Recommendation |
 | --- | --- | --- | --- |
