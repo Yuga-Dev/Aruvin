@@ -69,6 +69,15 @@ export const attemptRecordSchema = z
       .object({
         userMessageId: idSchema,
         previousAttemptId: idSchema.nullable(),
+        // Release 1: set by edit/regenerate only; bounded, for accounting and reconciliation.
+        revision: z
+          .object({
+            kind: z.enum(['edit', 'regenerate']),
+            ofTurnId: idSchema,
+            ofAttemptId: idSchema.optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict(),
   })

@@ -84,10 +84,15 @@ export const messageRecordObjectSchema = z
     memoryUpdated: z.boolean().optional(),
     /** Task-mode plan and final step states (docs/task-mode-and-flows/spec.md A4). */
     task: taskSnapshotSchema.optional(),
+    /** Release 1: id of the older message this one replaces (edit or regenerate); the older record is never modified. */
+    supersedes: idSchema.optional(),
   })
   .strict();
 
 export const messageRecordSchema = messageRecordObjectSchema.superRefine((v, ctx) => {
+  if (v.supersedes !== undefined && v.supersedes === v.messageId) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['supersedes'], message: 'a message cannot supersede itself' });
+  }
   if ((v.webSources !== undefined || v.webActivities !== undefined) && v.role !== 'assistant') {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['role'],
       message: 'web provenance requires assistant role' });
@@ -129,3 +134,16 @@ export type MessageRole = z.infer<typeof messageRoleSchema>;
 export type MessageCompletionStatus = z.infer<
   typeof messageCompletionStatusSchema
 >;
+
+/**
+ * Cross-record rule a single record cannot check: an assistant message supersedes an
+ * assistant message of the same turn (regenerate), a user message a user message
+ * (edit, always a different turn), never itself. Revision code calls this before writing.
+ */
+export function isValidSupersession(
+  next: Pick<MessageRecord, 'messageId' | 'role' | 'turnId'>,
+  target: Pick<MessageRecord, 'messageId' | 'role' | 'turnId'>,
+): boolean {
+  if (next.messageId === target.messageId || next.role !== target.role) return false;
+  return next.role === 'assistant' ? next.turnId === target.turnId : next.turnId !== target.turnId;
+}

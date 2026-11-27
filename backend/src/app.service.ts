@@ -109,6 +109,7 @@ import type { MemoryFirstPolicy } from './chat-runtime/memory-first-foundation.j
 import { OperationsService, Telemetry, observePersistence, writeStdoutLog } from './operations/index.js';
 import { boundedResult } from './operations/bounded.js';
 import type { ChatHttpOptions, ChatStreamTransport } from './http/index.js';
+import { NOOP_FEATURE_PORTS } from './http/noop-ports.js';
 import { finishLocalMaintenanceForUsers } from './operations/local-recovery.js';
 import { EPHEMERAL_SESSION_MAX_AGE_MS } from './persistence/sessions.js';
 import type { ExecutionReservationPort, LiveKitAdmissionPort, LiveKitAdmissionTicket,
@@ -1253,6 +1254,7 @@ export class AppService {
       budgets: this.config.budgets,
       currentConfig: { current: () => this.configFor(identity.resolve().userId) },
       prepareWeb: userId => this.prepareWebUser(userId),
+      ...NOOP_FEATURE_PORTS,
       ...(voice ? { executionReservations: voice.reservations } : {}),
     };
   }

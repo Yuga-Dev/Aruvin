@@ -20,6 +20,11 @@
 import {
   API_PROTOCOL_VERSION,
   API_ROUTES,
+  editTurnRequestSchema,
+  feedbackRequestSchema,
+  regenerateTurnRequestSchema,
+  searchSessionsQuerySchema,
+  searchSessionsResponseSchema,
   hasCanvasContent,
   listMessagesResponseSchema,
   listSessionsResponseSchema,
@@ -28,7 +33,8 @@ import {
   toVisibleMessage,
   turnStatusResponseSchema,
 } from './api.js';
-import { messageRecordSchema } from './message.js';
+import { isValidSupersession, messageRecordSchema } from './message.js';
+import { DEFAULT_BUDGETS } from './budgets.js';
 
 describe('submitTurnRequestSchema', () => {
   it('accepts sessionId, content, and idempotencyKey only', () => {
@@ -245,5 +251,47 @@ describe('Canvas retention helpers', () => {
     }));
     expect(visible).toMatchObject({ content: 'Visible answer.', role: 'assistant' });
     expect(visible.voiceTranscripts).toEqual([{ role: 'assistant', content: 'Visible answer.' }]);
+  });
+});
+
+describe('Release 1 contracts', () => {
+  it('edit, regenerate, feedback and search schemas are strict and bounded', () => {
+    const key = 'idem-key-1';
+    expect(editTurnRequestSchema.safeParse({ content: 'hi', idempotencyKey: key }).success).toBe(true);
+    expect(editTurnRequestSchema.safeParse({ content: '', idempotencyKey: key }).success).toBe(false);
+    expect(editTurnRequestSchema.safeParse({ content: 'x'.repeat(DEFAULT_BUDGETS.maxInputChars + 1), idempotencyKey: key }).success).toBe(false);
+    expect(editTurnRequestSchema.safeParse({ content: 'hi', idempotencyKey: key, userId: 'u' }).success).toBe(false);
+    expect(regenerateTurnRequestSchema.safeParse({ idempotencyKey: key }).success).toBe(true);
+    expect(regenerateTurnRequestSchema.safeParse({ idempotencyKey: key, content: 'x' }).success).toBe(false);
+    for (const rating of ['up', 'down', null]) {
+      expect(feedbackRequestSchema.safeParse({ rating }).success).toBe(true);
+    }
+    expect(feedbackRequestSchema.safeParse({ rating: 'meh' }).success).toBe(false);
+    expect(feedbackRequestSchema.safeParse({ rating: 'up', comment: 'x' }).success).toBe(false);
+    expect(searchSessionsQuerySchema.safeParse({ q: 'ab' }).success).toBe(true);
+    expect(searchSessionsQuerySchema.safeParse({ q: 'a' }).success).toBe(false);
+    expect(searchSessionsQuerySchema.safeParse({ q: 'a'.repeat(101) }).success).toBe(false);
+    expect(searchSessionsQuerySchema.safeParse({ q: 'ab', limit: '20' }).success).toBe(true);
+    expect(searchSessionsQuerySchema.safeParse({ q: 'ab', limit: '21' }).success).toBe(false);
+    expect(searchSessionsQuerySchema.safeParse({ q: 'ab', userId: 'u' }).success).toBe(false);
+    expect(searchSessionsResponseSchema.safeParse({ items: [], nextCursor: null, degraded: true }).success).toBe(true);
+    expect(API_ROUTES.searchSessions).toBe('/sessions/search');
+    expect(API_ROUTES.exportSession('s1')).toBe('/sessions/s1/export.md');
+    expect(API_ROUTES.messageFeedback('s1', 'm1')).toBe('/sessions/s1/messages/m1/feedback');
+  });
+
+  it('supersedes cannot reference itself or cross roles', () => {
+    const base = { messageId: 'm2', turnId: 't1', role: 'assistant' as const };
+    expect(isValidSupersession(base, { messageId: 'm1', turnId: 't1', role: 'assistant' })).toBe(true);
+    expect(isValidSupersession(base, { messageId: 'm2', turnId: 't1', role: 'assistant' })).toBe(false);
+    expect(isValidSupersession(base, { messageId: 'm1', turnId: 't1', role: 'user' })).toBe(false);
+    expect(isValidSupersession(base, { messageId: 'm1', turnId: 't0', role: 'assistant' })).toBe(false);
+    expect(isValidSupersession({ messageId: 'u2', turnId: 't2', role: 'user' },
+      { messageId: 'u1', turnId: 't1', role: 'user' })).toBe(true);
+    const rec = { schemaVersion: 1, userId: 'u', sessionId: 's', turnId: 't1', messageId: 'm1', eventId: 'e1',
+      sequence: 1, role: 'assistant', content: 'x', createdAt: new Date().toISOString(),
+      completionStatus: 'completed', attemptId: 'a1', truncated: false };
+    expect(messageRecordSchema.safeParse({ ...rec, supersedes: 'm1' }).success).toBe(false);
+    expect(messageRecordSchema.safeParse({ ...rec, supersedes: 'm0' }).success).toBe(true);
   });
 });

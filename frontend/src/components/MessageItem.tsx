@@ -22,7 +22,7 @@
  * ============================================================================
  */
 
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { TaskCard } from './TaskCard.tsx';
 import type { VisibleMessage } from '../api/protocol.ts';
 import { isWeatherView } from '../api/weather-protocol.ts';
@@ -101,6 +101,8 @@ export const MessageItem = memo(function MessageItem({
   onRetry,
   onSkipTaskStep,
   onOpenMemorySettings,
+  actionsStart,
+  actionsEnd,
 }: {
   message: VisibleMessage;
   liveStatus?: string;
@@ -110,6 +112,9 @@ export const MessageItem = memo(function MessageItem({
   /** Live task only: skip a queued step. */
   onSkipTaskStep?: (stepId: string) => Promise<void>;
   onOpenMemorySettings?: () => void;
+  /** Release 1 slots in the action row: unit B plugs edit/regenerate in, unit C feedback. */
+  actionsStart?: ReactNode;
+  actionsEnd?: ReactNode;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
   const voiceArtifacts = useMemo(
@@ -310,9 +315,11 @@ export const MessageItem = memo(function MessageItem({
             </div>
           ) : null}
 
-          {copyButton || memoryUpdatedPill ? (
+          {copyButton || memoryUpdatedPill || actionsStart || actionsEnd ? (
             <div className="aurvin-message-actions">
+              {actionsStart}
               {copyButton}
+              {actionsEnd}
               {memoryUpdatedPill}
             </div>
           ) : null}
