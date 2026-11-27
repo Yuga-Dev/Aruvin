@@ -32,6 +32,7 @@ export const FEATURE_FLAGS = {
   messageEdit: false, // Release 1: edit latest user message and regenerate latest answer
   feedback: false, // Release 1: thumbs up/down on assistant messages
   exportMarkdown: false, // Release 1: Export as Markdown in the chat header menu
+  canvasExportPrint: false, // Release 2: PNG export and Print in the Canvas toolbar
   taskMode: false, // Release 3: Task toggle in the composer (docs/task-mode-and-flows); on after release approval
 } as const;
 

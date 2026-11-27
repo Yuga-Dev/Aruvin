@@ -3,6 +3,19 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // livekit-client (~550 kB) is the only chunk above the default limit; it loads on demand when
+    // live voice is first used (see features/voice/state/lazy-livekit-client.ts), so the limit is
+    // raised just above it instead of hiding growth in the initial chunk.
+    chunkSizeWarningLimit: 600,
+    rolldownOptions: {
+      output: {
+        // React runtime in its own long-lived, cacheable chunk, apart from app code.
+        manualChunks: (id: string) =>
+          /node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id) ? 'react-vendor' : undefined,
+      },
+    },
+  },
   server: {
     port: Number(process.env.FRONTEND_PORT ?? 5173),
     proxy: {

@@ -27,24 +27,24 @@ import { SafeMarkdown } from '../chat/markdown/safe-markdown.tsx';
 import { chatReducer, initialChatState } from '../chat/state/chat-reducer.ts';
 import type { VisibleMessage } from '../../api/protocol.ts';
 import {
-  CanvasPanel,
   CANVAS_TRANSITION_MS,
-  ChartRenderer,
   claimNewAutoOpenArtifactId,
   collectSessionCanvasArtifacts,
   computeWheelZoomView,
   extractMessageCanvasArtifacts,
   extractVoiceMessageCanvasArtifacts,
   forcedChartKindFromSubType,
-  MermaidRenderer,
   mergeSessionCanvasArtifacts,
   parseMermaidSource,
   prefersReducedCanvasMotion,
   projectionToCanvasArtifact,
   resolveCanvasCloseFocusTarget,
   restoreCanvasCloseFocus,
-  SvgRenderer,
 } from './index.ts';
+import { CanvasPanel } from './CanvasPanel.tsx';
+import { ChartRenderer } from './renderers/chart-renderer.tsx';
+import { MermaidRenderer } from './renderers/mermaid-renderer.tsx';
+import { SvgRenderer } from './renderers/svg-renderer.tsx';
 
 describe("Aurvin's Canvas extraction and inline chat replacement", () => {
   it('replaces Mermaid diagram fences in SafeMarkdown with a "View diagram" Canvas card while keeping normal code inline', () => {

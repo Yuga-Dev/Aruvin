@@ -19,7 +19,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { MermaidRenderer, parseMermaidSource } from './index.ts';
+import { parseMermaidSource } from './index.ts';
+import { MermaidRenderer } from './renderers/mermaid-renderer.tsx';
 import { DIAGRAM_LIMITS } from './diagram-parsers.ts';
 import { FEATURE_FLAGS } from '../../app/feature-flags.ts';
 import type { MermaidFlowModel } from './canvas-types.ts';
