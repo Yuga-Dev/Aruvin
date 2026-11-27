@@ -1,6 +1,6 @@
 # Release 5 plan: Projects and memory
 
-**Status:** Planned, awaiting user decisions (section 10). **Branch:** `codex/release-5-plan`. **Based on:** main `a38f1da`. Release 1 Unit 0 contracts are being implemented on another branch; this plan names every collision (section 8).
+**Status:** Decisions D1–D12 accepted as recommended by the user on 27 November 2026 (section 10). M1 and M2 start now (D11); Projects units wait for Release 1. **Branch:** planning merged from `codex/release-5-plan`. **Based on:** main `a38f1da`. Release 1 Unit 0 contracts are being implemented on another branch; this plan names every collision (section 8).
 
 Work order follows [release-plan.md](../roadmap/release-plan.md): contracts, backend, database and indexes, API, frontend, states, security, tests, docs, verification. User-visible parts stay behind `frontend/src/app/feature-flags.ts` (`projects` and `memory`, both false today). Format precedent: [release-1 plan](../release-1/plan.md). Status of everything else: [feature-status.md](../roadmap/feature-status.md). Existing memory work: [user-memory-context](../user-memory-context/final_report.md), [user-personalization](../user-personalization/goal.md), [context-compaction-memory](../context-compaction-memory/final_report.md).
 
@@ -226,7 +226,9 @@ Record environment and commit set as in [release-0](../releases/release-0.md).
 - [ ] Docs: `feature-status.md`, AGENTS.md collection table, `docs/releases/release-5.md`, operations note; internal links resolve.
 - [ ] Flags flipped only after the above. Not claimed: live provider behaviour, Azure compatibility, wall-clock performance, production readiness.
 
-## 10. Open decisions (recommendation for each)
+## 10. Decisions (recommendation for each)
+
+**Accepted 27 November 2026:** the user accepted every recommendation below as written.
 
 | # | Decision | Options | Recommendation |
 | --- | --- | --- | --- |
