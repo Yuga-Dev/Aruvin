@@ -174,6 +174,8 @@ export interface ChatRuntime extends AgentRuntime {
   prepareSession?(userId: string, sessionId: string): Promise<void>;
   activeSessionTurn?(userId: string, sessionId: string): Promise<import('../contracts/api.js').ActiveSessionTurn | null>;
   observeVoiceAccounting?(record: import('../contracts/voice-accounting.js').VoiceAccountingRecord): boolean;
+  /** Task mode: skip a not-yet-started step of the running task (memory-only). */
+  skipTaskStep?(command: import('../contracts/runtime.js').CancelTurnCommand, stepId: string): Promise<void>;
   retrySave?(userId: string, sessionId: string, turnId: string,
     expected: { epoch: string; version: number }): Promise<TurnStatusResponse>;
   memorySession?(userId: string, sessionId: string): import('../contracts/session.js').SessionRecord | null;

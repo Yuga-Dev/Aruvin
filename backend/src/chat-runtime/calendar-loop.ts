@@ -188,6 +188,8 @@ export type CalendarLoopContext = {
   onClearView?: () => void;
   /** Optional accepted-turn web controller; absent keeps Calendar byte-identical. */
   web?: WebTurn;
+  /** Task mode: spends from the task's outer attempt/time budget; throws when exhausted. */
+  beforeModel?: () => void;
   assistantFields?: () => Pick<MessageRecord, 'mode' | 'visibility' | 'voiceSessionId' | 'canvasArtifacts'>;
   /** Request-local User/Dev handle; absent keeps today's native bytes. */
   turnMode?: TurnModeHandle;
@@ -1449,6 +1451,7 @@ export class CalendarLoop {
     const web = this.ctx.web;
     const composite = Boolean(web);
     const memoryAdvertised = this.ctx.memoryTool?.allowed() === true;
+    this.ctx.beforeModel?.();
     if (web && !web.beforeModel()) {
       return this.answerAndSeal(input,
         "I couldn't verify this on the live web. Please try again.", null);

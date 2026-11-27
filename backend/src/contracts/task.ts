@@ -89,10 +89,13 @@ export const taskSnapshotSchema = z.object({
   taskId: idSchema,
   plan: taskPlanSchema,
   steps: z.array(z.object({ stepId: stepIdSchema, status: taskStepStatusSchema }).strict()).max(TASK_LIMITS.maxSteps),
+  /** Absent = completed. Distinct terminal states (spec §2.5); never inferred from step statuses. */
+  outcome: z.enum(['cancelled', 'failed', 'interrupted', 'budget_exceeded']).optional(),
 }).strict();
 
 export type TaskPlanEvent = z.infer<typeof taskPlanEventSchema>;
 export type TaskStepEvent = z.infer<typeof taskStepEventSchema>;
+export type TaskOutcome = NonNullable<z.infer<typeof taskSnapshotSchema>['outcome']>;
 export type TaskSnapshot = z.infer<typeof taskSnapshotSchema>;
 
 const plannerOutputSchema = z.object({
