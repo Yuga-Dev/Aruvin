@@ -25,6 +25,7 @@ import {
   PALETTE_CONVERSATION_LIMIT,
   filterPaletteItems,
   isPaletteShortcut,
+  messageSearchItems,
   type PaletteItem,
 } from './command-palette.ts';
 
@@ -36,6 +37,20 @@ const items: PaletteItem[] = [
   { id: 's1', group: 'Conversations', label: 'Quarterly budget review', run: noop },
   { id: 's2', group: 'Conversations', label: 'Budget for the offsite', hint: 'Pinned', run: noop },
 ];
+
+describe('message search group', () => {
+  it('palette adds a message-search group without breaking local filtering', () => {
+    const found = messageSearchItems([
+      { sessionId: 'x1', title: 'Offsite', lastActivityAt: '2026-01-01T00:00:00.000Z', match: 'message', snippet: 'we agreed on <b>venue</b>', messageId: 'm1' },
+    ], noop);
+    expect(found[0]).toMatchObject({ group: 'Messages', label: 'Offsite', hint: 'we agreed on <b>venue</b>' });
+    const all = [...items, ...found];
+    // Server-ranked rows survive a query their label does not contain; local rows still filter.
+    expect(filterPaletteItems(all, 'venue').map((i) => i.id)).toEqual(['search-x1']);
+    expect(filterPaletteItems(all, 'budget').map((i) => i.id)).toEqual(['s2', 's1', 'search-x1']);
+    expect(filterPaletteItems(all, '').map((i) => i.group)).toEqual(['Actions', 'Actions', 'Conversations', 'Conversations', 'Messages', 'Theme']);
+  });
+});
 
 describe('filterPaletteItems', () => {
   it('orders groups Actions, Conversations, Theme for an empty query', () => {

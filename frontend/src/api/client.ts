@@ -33,6 +33,7 @@ import {
   isRetryTurnRequest,
   isSubmitTurnRequest,
   isSubmitTurnResponse,
+  isSearchSessionsResponse,
   isVisibleMessageList,
   type EditTurnRequest,
   type FeedbackRating,
@@ -472,8 +473,11 @@ export class ApiClient {
 
   // Release 1 stubs (unit 0): bodies belong to units A (search), B (edit/regenerate) and C (feedback/export).
   // They fail closed so nothing can appear to work before its feature flag and backend exist.
-  async searchSessions(_query: string, _options?: { cursor?: string | null; limit?: number; signal?: AbortSignal }): Promise<SearchSessionsResponse> {
-    throw notImplemented('Search');
+  async searchSessions(query: string, options?: { cursor?: string | null; limit?: number; signal?: AbortSignal }): Promise<SearchSessionsResponse> {
+    const response = await this.request<unknown>(API_ROUTES.searchSessions, { method: 'GET', signal: options?.signal },
+      { q: query, cursor: options?.cursor, limit: options?.limit });
+    if (!isSearchSessionsResponse(response)) throw new ApiClientError('INVALID_RESPONSE', 'Search results could not be read.', 200, false);
+    return response;
   }
 
   async editTurn(_sessionId: string, _turnId: string, _request: EditTurnRequest, _options?: { signal?: AbortSignal }): Promise<SubmitTurnResponse> {

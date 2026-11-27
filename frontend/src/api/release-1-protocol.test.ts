@@ -51,9 +51,15 @@ describe('release 1 protocol mirrors', () => {
     expect(isVisibleMessage({ ...msg, role: 'user', feedback: 'up' })).toBe(false)
   })
 
-  it('keeps client stubs inert and the four flags off', async () => {
+  it('keeps client stubs inert (search is live) and the four flags off', async () => {
     const client = new ApiClient({ fetch: () => { throw new Error("must not call network") } })
-    await expect(client.searchSessions('hello')).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' })
+    const urls: string[] = []
+    const searching = new ApiClient({ fetch: async (url: unknown) => {
+      urls.push(String(url))
+      return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 })
+    } })
+    await expect(searching.searchSessions('hello', { cursor: 'c1', limit: 5 })).resolves.toEqual({ items: [], nextCursor: null })
+    expect(urls[0]).toMatch(/\/sessions\/search\?q=hello&cursor=c1&limit=5$/)
     await expect(client.putFeedback('s', 'm', 'up')).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' })
     await expect(client.exportSession('s')).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' })
     expect([FEATURE_FLAGS.conversationSearch, FEATURE_FLAGS.messageEdit, FEATURE_FLAGS.feedback,

@@ -14,7 +14,7 @@
  *
  * KEY COMPONENTS:
  *    - Brand / collapse control
- *    - New chat control, Search (command palette) entry
+ *    - New chat control, Search (command palette) entry, flag-gated chat search field
  *    - Flag-aware Workspace navigation (shellNavItems)
  *    - Date-grouped session list with aria-current
  *    - Load-more pagination trigger
@@ -22,6 +22,9 @@
  */
 
 import { memo, useState } from 'react';
+import { FEATURE_FLAGS } from '../app/feature-flags.ts';
+import { SidebarSearch } from '../features/search/SidebarSearch.tsx';
+import { revealMessage } from '../features/search/use-conversation-search.ts';
 import type { AuthUser } from '../api/auth-protocol.ts';
 import type { ChatState } from '../features/chat/state/chat-types.ts';
 import type { SessionSummary } from '../api/protocol.ts';
@@ -119,6 +122,8 @@ const SidebarContent = memo(function SidebarContent({ onCollapse, onNewChat, onM
   const [renaming, setRenaming] = useState<SessionSummary | null>(null);
   const [sessionToDelete, setSessionToDelete] = useState<SessionSummary | null>(null);
   const [titleInput, setTitleInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searching, setSearching] = useState(false);
   const groups = groupSessions(state.sessions, now);
   const navItems = shellNavItems({ onManageAurvin, onOpenIntegrations }, user?.role);
 
@@ -196,6 +201,13 @@ const SidebarContent = memo(function SidebarContent({ onCollapse, onNewChat, onM
             <kbd className="aurvin-sidebar-shortcut" aria-hidden="true">Ctrl K</kbd>
           </button>
         ) : null}
+        {FEATURE_FLAGS.conversationSearch ? (
+          <SidebarSearch client={client} query={searchQuery} onQueryChange={setSearchQuery} onActiveChange={setSearching}
+            onOpen={(result) => {
+              void actions.selectSession(result.sessionId, result.title);
+              revealMessage(result.messageId);
+            }} />
+        ) : null}
       </div>
 
       {navItems.length > 0 ? (
@@ -216,7 +228,7 @@ const SidebarContent = memo(function SidebarContent({ onCollapse, onNewChat, onM
         </nav>
       ) : null}
 
-      <nav className="aurvin-session-nav" aria-label="Sessions">
+      {searching ? null : <nav className="aurvin-session-nav" aria-label="Sessions">
         {error || state.sessionsError ? <p className="aurvin-session-error" role="alert">{error || state.sessionsError}</p> : null}
         {groups.map((group) => (
           <section key={group.label} className="aurvin-session-group">
@@ -292,7 +304,7 @@ const SidebarContent = memo(function SidebarContent({ onCollapse, onNewChat, onM
             Load more chats…
           </button>
         ) : null}
-      </nav>
+      </nav>}
       {onManageAurvin ? (
         <div className="aurvin-profile-footer">
           <ProfileMenu user={user} onManageAurvin={onManageAurvin} onSignOut={onSignOut} />
