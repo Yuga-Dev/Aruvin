@@ -59,6 +59,10 @@ export class ChatHttpController {
   cancel(@Param('sessionId') s:string,@Param('turnId') t:string,@Body() body:unknown,@Query() q:unknown) {
     noQuery(q); return this.service.cancel(pathId(s),pathId(t),body);
   }
+  @Post(':sessionId/turns/:turnId/steps/:stepId/skip') @HttpCode(204)
+  skipStep(@Param('sessionId') s:string,@Param('turnId') t:string,@Param('stepId') st:string,@Body() body:unknown,@Query() q:unknown) {
+    noQuery(q); return this.service.skipTaskStep(pathId(s),pathId(t),st,body);
+  }
   @Post(':sessionId/turns/:turnId/retry-save') @HttpCode(202)
   retrySave(@Param('sessionId') s:string,@Param('turnId') t:string,@Body() body:unknown,@Query() q:unknown) {
     noQuery(q); return this.service.retrySave(pathId(s),pathId(t),body);

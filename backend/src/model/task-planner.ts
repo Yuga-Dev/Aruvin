@@ -73,6 +73,11 @@ export type TaskPlanInput = {
   config: ModelConfig;
   limits: ModelLimits;
   signal: AbortSignal;
+  /**
+   * Memory-first: when set, the accounting write is handed here (as a thunk) instead of
+   * running at once, so the caller can run it after the turn's own consolidated save.
+   */
+  defer?: (run: () => Promise<unknown>) => void;
 };
 
 /** Tolerate a model that wraps its JSON in a fence despite instructions. */
@@ -156,8 +161,10 @@ export class TaskPlanner {
       : fault ? 'failed' : !ended ? 'interrupted' : truncated ? 'truncated' : 'completed';
     const record: AccountingRecord = { ...accounting, outcome, endedAt: accounting.endedAt ?? this.now() };
     // Best effort and never awaited before the main dispatch: accounting cannot block chat.
-    const settled = accountingService.reconcile(record, new AbortController().signal)
+    const run = () => accountingService.reconcile(record, new AbortController().signal)
       .catch(() => accountingService.saveRaw(record).then(() => record, () => record));
+    const settled: Promise<AccountingRecord> = input.defer
+      ? new Promise(resolve => input.defer!(() => run().then(resolve))) : run();
 
     if (outcome === 'cancelled') { void settled; throw new AppError('CANCELLED', 'The task was cancelled.', false); }
     // A failed or malformed plan is not a chat failure: the caller runs a normal turn.

@@ -29,6 +29,10 @@ export function observedRuntime(get:() => ChatRuntime | null,t:Telemetry,ready:R
     processEpoch: () => get()?.processEpoch?.() ?? null,
     prepareSession: (u, s) => raw().prepareSession?.(u, s) ?? Promise.resolve(),
     activeSessionTurn: (u, s) => raw().activeSessionTurn ? raw().activeSessionTurn!(u, s) : Promise.resolve(null),
+    get skipTaskStep() {
+      const runtime = get();
+      return runtime?.skipTaskStep?.bind(runtime);
+    },
     get retrySave() {
       const runtime = get();
       return runtime?.retrySave?.bind(runtime);

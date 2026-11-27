@@ -3211,3 +3211,44 @@
 @keyframes aurvin-task-pulse {
   50% { opacity: 0.35; }
 }
+
+.aurvin-task-skip {
+  margin-left: 8px;
+  padding: 0 6px;
+  border: 1px solid var(--aurvin-border);
+  border-radius: var(--aurvin-radius-sm);
+  background: transparent;
+  color: var(--aurvin-text-secondary);
+  font: inherit;
+  font-size: var(--aurvin-text-xs);
+  cursor: pointer;
+}
+
+.aurvin-task-skip:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.aurvin-task-skip:focus-visible {
+  outline: 2px solid var(--aurvin-primary);
+  outline-offset: 2px;
+}
+
+.aurvin-task-summary {
+  grid-column: 2 / -1;
+  max-height: 4.5em;
+  overflow: hidden;
+  font-size: var(--aurvin-text-xs);
+  color: var(--aurvin-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.aurvin-task-notice {
+  margin: 8px 0 0;
+  font-size: var(--aurvin-text-xs);
+  color: var(--aurvin-text-secondary);
+}
+
+.aurvin-task-ended {
+  margin: 0 0 12px;
+}

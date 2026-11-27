@@ -64,8 +64,8 @@ import { defaultEnvironmentContext, estimateMessagesTokens, fixedContextMessages
 import { createModelServices } from '../model/index.js';
 import { CompactionRunner } from '../model/compaction-runner.js';
 import { TaskPlanner, type PlannerTool } from '../model/task-planner.js';
-import { isAnswerOnlyPlan, type TaskPlan, type TaskStepEvent } from '../contracts/task.js';
-import { TaskTracker } from './task-tracker.js';
+import { isAnswerOnlyPlan, type TaskOutcome, type TaskPlan, type TaskStepEvent } from '../contracts/task.js';
+import { TaskBudget, TaskTracker } from './task-tracker.js';
 import { selectCompactionCutpoint, type CompactionTurn } from '../context/cutpoint.js';
 import type { ActiveSummaryRecord } from '../contracts/agent-memory.js';
 import { buildTurnGraph } from '../agent/turn-graph.js';
@@ -140,7 +140,9 @@ type Entry = { identity: Readonly<ResolvedIdentity>; turn: MemoryTurn; snapshot:
   weatherView?: MessageRecord['weatherView'];
   sourceProvenance?: MessageRecord['sourceProvenance']; initialBudget?: CalendarTurnBudget; native?: NativeExecution; running: boolean; web?: WebTurn;
   webAcceptedAt?: number; webLimits?: import('../contracts/web-search-policy.js').WebSearchLimits;
-  memoryUpdated?: true; task?: true; taskSnapshot?: MessageRecord['task'] };
+  memoryUpdated?: true; task?: true; taskSnapshot?: MessageRecord['task'];
+  /** Set while a task turn runs; lets the Skip route reach the live tracker. */
+  taskSkip?: (stepId: string) => Promise<void> };
 type Promotion = { lease: ExecutionLease; binding?: CalendarAccountBinding; attempt?: AttemptRecord;
   receipt?: ConfirmedRecord<AttemptRecord>; acceptance?: AcceptanceRecord; graph?: TurnGraph; ledger?: CalendarTurnLedger;
   ready: boolean };
@@ -700,6 +702,31 @@ export class MemoryText {
     if (work) work.abort('CANCELLED');
     if (!e.running) this.finish(e, '', 'cancelled', new AppError('CANCELLED', 'Generation was cancelled.', false));
     return true;
+  }
+  /**
+   * Run a best-effort write once the turn's save settled (saved/failed/unknown), polling
+   * memory state only. ponytail: lost if the process stops first (planner accounting only);
+   * gives up waiting after 5 minutes and runs anyway.
+   */
+  private runAfterSave(e: Entry, run: () => Promise<unknown>): void {
+    const started = Date.now();
+    const tick = () => {
+      let state: string;
+      try { state = this.foundation.saveState(e.turn); } catch { state = 'unknown'; }
+      if (!['pending', 'saving'].includes(state) || Date.now() - started > 300_000) { void run().catch(() => undefined); return; }
+      setTimeout(tick, 250).unref();
+    };
+    setTimeout(tick, 250).unref();
+  }
+  /** Skip a not-yet-started step of the running task. Memory-only: no storage access. */
+  async skipTaskStep(c: CancelTurnCommand, stepId: string): Promise<void> {
+    const identity = this.runtime.identity(c.identity);
+    if (identity.userId !== this.ownerId) throw new AppError('NOT_FOUND', 'Chat not found.');
+    const e = this.find(c.sessionId, c.turnId);
+    if (!e || e.turn.mode === 'live') throw new AppError('NOT_FOUND', 'Turn not found.');
+    if (e.turn.attemptId !== c.attemptId) throw new AppError('CONFLICT_ACTIVE_TURN', 'This attempt is no longer current.');
+    if (!e.running || !e.taskSkip) throw new AppError('NOT_FOUND', 'No running task.');
+    await e.taskSkip(stepId);
   }
   async retry(c: RetryTurnCommand) {
     const identity = this.runtime.identity(c.identity);
@@ -1855,7 +1882,11 @@ export class MemoryText {
     // Task mode: progress is inferred from the turn's own tool activity (no extra model calls).
     let taskTracker: TaskTracker | null = null;
     let taskPlan: TaskPlan | null = null;
-    const observeTask = async (event: { type: string; proposalId?: unknown }) => {
+    // Outer task budget (spec §2.6): the planner and every loop dispatch spend from it.
+    // Planner accounting is a storage write: it runs after this turn's consolidated save, never during it.
+    const deferredAccounting: (() => Promise<unknown>)[] = [];
+    const taskBudget = e.task && !c.live ? new TaskBudget(() => Date.parse(this.runtime.now())) : null;
+    const observeTask = async (event: { type: string; proposalId?: unknown; text?: unknown }) => {
       if (taskTracker) for (const step of taskTracker.observe(event)) await sendRaw(step);
     };
     const send = async (event: StreamEvent) => { await sendRaw(event); await observeTask(event); };
@@ -1863,9 +1894,12 @@ export class MemoryText {
     // snapshot (A4) and the streamed closing events agree.
     let taskClosing: TaskStepEvent[] = [];
     let taskClosed = false;
-    const closeTask = (outcome: 'completed' | 'failed') => {
+    const closeTask = () => {
       if (!taskTracker || taskClosed) return;
       taskClosed = true;
+      const outcome: 'completed' | TaskOutcome = e.status === 'completed' || e.status === 'truncated' ? 'completed'
+        : taskBudget?.exceeded ? 'budget_exceeded' : e.status === 'cancelled' ? 'cancelled'
+        : e.status === 'interrupted' ? 'interrupted' : 'failed';
       taskClosing = taskTracker.finish(outcome);
       e.taskSnapshot = taskTracker.snapshot();
     };
@@ -1987,14 +2021,16 @@ export class MemoryText {
           ...(e.web ? ['web' as const] : []),
           ...(snapshot.modelLimits.tools ? ['environment' as const] : []),
         ];
-        const { plan } = await this.taskPlanner.plan({ userId: c.userId, sessionId: c.sessionId,
+        taskBudget?.beforeAttempt();
+        const { plan } = await this.taskPlanner.plan({ defer: run => { deferredAccounting.push(run); }, userId: c.userId, sessionId: c.sessionId,
           turnId: c.turnId, attemptId: c.attemptId, request: e.turn.content, tools,
           config: { identity: { userId: c.userId }, budgets: snapshot.budgets, openRouter: snapshot.openRouter },
           limits: snapshot.modelLimits, signal: job.signal });
         job.check();
         if (plan && !isAnswerOnlyPlan(plan)) {
           taskPlan = plan;
-          taskTracker = new TaskTracker(c.attemptId, plan);
+          const tracker = taskTracker = new TaskTracker(c.attemptId, plan);
+          e.taskSkip = async stepId => { for (const step of tracker.skip(stepId)) await sendRaw(step); };
           await job.wait(send({ type: 'task-plan', version: 1, taskId: c.attemptId, plan }),
             snapshot.budgets.idleStreamTimeoutMs);
         }
@@ -2221,6 +2257,7 @@ export class MemoryText {
           fetcher: this.d.fetcher ?? fetch, now: () => this.runtime.now(), diagnostics: this.d.diagnostics,
           historicalGroups, historicalWebGroups, initialGroups, foldableTurnIds, responseMode: c.live ? 'voice' : 'text',
           turnMode, localToolControl: c.localToolControl,
+          ...(taskBudget ? { beforeModel: () => taskBudget.beforeAttempt() } : {}),
           memoryTool: memoryToolTurn,
           clientTimeZone: e.clientTimeZone,
           executeEnvironment: (envelope, signal) => executeEnvironmentTool({
@@ -2424,6 +2461,7 @@ export class MemoryText {
           const fallback = "I couldn't verify this on the live web. Please try again.";
           for (let iteration = 0; iteration < 16 && !answered; iteration++) {
             job.check();
+            taskBudget?.beforeAttempt();
             if (webTurn ? !webTurn.beforeModel() : nonWebModelAttempts++ >= 8) {
               const text = webTurn ? fallback : "I couldn't retrieve environment details right now. Please try again.";
               await publish(prose ? prose.push(text) : text);
@@ -2650,7 +2688,7 @@ export class MemoryText {
       if (e.native?.loop.memoryWasUpdated()) e.memoryUpdated = true;
       e.status = length ? 'truncated' : 'completed';
       if (!c.live) {
-        closeTask('completed');
+        closeTask();
         if (promotedSeal) await this.publishPromoted(e, promotedSeal, partial, admittedArtifacts);
         else this.finish(e, partial, e.status);
       }
@@ -2677,7 +2715,7 @@ export class MemoryText {
         e.status = failure.code === 'CANCELLED' ? 'cancelled' : ['INTERRUPTED', 'TIMEOUT'].includes(failure.code) ? 'interrupted' : 'failed';
         e.error = failure;
         if (failure.code === 'PERSISTENCE_ERROR' && e.native) e.native.pending = true;
-        else if (!c.live) { closeTask('failed'); this.finish(e, partial, e.status, failure); }
+        else if (!c.live) { closeTask(); this.finish(e, partial, e.status, failure); }
       }
     } finally {
       try {
@@ -2693,7 +2731,7 @@ export class MemoryText {
             this.finish(e, partial, e.status as MemoryTerminal['status'], e.error);
         }
       } finally {
-        await job.settled(); job.close(); e.running = false;
+        await job.settled(); job.close(); e.running = false; e.taskSkip = undefined;
         if (mutationBarrier?.paused) {
           mutationBarrier.paused = false;
           if (!this.foundation.session(e.turn.sessionId).fenced) {
@@ -2716,7 +2754,7 @@ export class MemoryText {
       if (!c.live && usage?.contextUsage)
         await send({ type: 'context-state', contextUsage: usage.contextUsage,
           ...(usage.compaction ? { compaction: usage.compaction } : {}) });
-      closeTask(e.status === 'completed' || e.status === 'truncated' ? 'completed' : 'failed');
+      closeTask();
       for (const step of taskClosing) await sendRaw(step);
       await send({ type: 'status', status: e.status, truncated: e.status === 'truncated', save: this.status(c.userId, c.sessionId, c.turnId)?.save });
       if (e.status === 'completed' || e.status === 'truncated')
@@ -2732,6 +2770,7 @@ export class MemoryText {
           ...(!c.live && usage?.contextUsage ? { contextUsage: usage.contextUsage } : {}) });
       else if (e.error) await send({ type: 'error', ...e.error.toClientBody() });
     } catch { /* Same-process status/replay retains the honest terminal outcome. */ }
+    for (const run of deferredAccounting) this.runAfterSave(e, run);
     if ((e.status === 'completed' || e.status === 'truncated')) {
       const snap = this.d.currentConfig?.current();
       if (snap) {

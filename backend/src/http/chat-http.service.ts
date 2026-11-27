@@ -18,7 +18,7 @@
  * ============================================================================
  */
 
-import { submitTurnRequestSchema, retryTurnRequestSchema, retrySaveRequestSchema, cancelTurnRequestSchema, submitTurnResponseSchema,
+import { submitTurnRequestSchema, retryTurnRequestSchema, retrySaveRequestSchema, cancelTurnRequestSchema, skipTaskStepRequestSchema, submitTurnResponseSchema,
   sessionSummarySchema, listSessionsResponseSchema, listMessagesResponseSchema, hasCanvasContent,
   turnStatusResponseSchema, type VisibleMessage } from '../contracts/api.js';
 import { AppError } from '../platform/errors/app-error.js';
@@ -214,6 +214,14 @@ export class ChatHttpService {
     if (!this.o.runtime.retrySave) throw new AppError('NOT_READY', 'Saving is unavailable.');
     return turnStatusResponseSchema.parse(await this.o.runtime.retrySave(identity.userId,
       pathId(sessionId), pathId(turnId), body));
+  }
+  /** Identity is server-resolved; the body only names the attempt. No storage access. */
+  async skipTaskStep(sessionId: string, turnId: string, stepId: string, raw: unknown) {
+    const identity = this.o.identity.resolve();
+    const body = parseBody(skipTaskStepRequestSchema, raw, this.o.identity);
+    if (!/^s[1-8]$/.test(stepId)) throw new AppError('INVALID_REQUEST', 'Step id is invalid.', false);
+    if (!this.o.runtime.skipTaskStep) throw new AppError('NOT_FOUND', 'No running task.');
+    await this.o.runtime.skipTaskStep({ ...body, identity, sessionId: pathId(sessionId), turnId: pathId(turnId) }, stepId);
   }
   async cancel(sessionId: string, turnId: string, raw: unknown) {
     const identity = this.o.identity.resolve();

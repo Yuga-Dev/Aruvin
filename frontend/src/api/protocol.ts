@@ -62,6 +62,8 @@ export const API_ROUTES = {
     `/sessions/${sessionId}/turns/${turnId}/retry`,
   retrySave: (sessionId: string, turnId: string) =>
     `/sessions/${sessionId}/turns/${turnId}/retry-save`,
+  skipTaskStep: (sessionId: string, turnId: string, stepId: string) =>
+    `/sessions/${sessionId}/turns/${turnId}/steps/${stepId}/skip`,
 } as const
 
 export const ATTEMPT_STATUSES = [
