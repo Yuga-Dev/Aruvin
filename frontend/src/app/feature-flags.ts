@@ -28,6 +28,10 @@ export const FEATURE_FLAGS = {
   canvasMoreDiagrams: false, // Release 2: mindmap, ER and class diagrams in Canvas
   canvasCalendarGrid: false, // Release 2: Day/Week toggle on Calendar agenda
   canvasTables: false, // Release 2: ```table blocks as sortable/filterable Canvas tables
+  conversationSearch: false, // Release 1: sidebar and palette search
+  messageEdit: false, // Release 1: edit latest user message and regenerate latest answer
+  feedback: false, // Release 1: thumbs up/down on assistant messages
+  exportMarkdown: false, // Release 1: Export as Markdown in the chat header menu
   taskMode: false, // Release 3: Task toggle in the composer (docs/task-mode-and-flows); on after release approval
 } as const;
 
