@@ -452,6 +452,15 @@ export class ApiClient {
     });
   }
 
+  /** Skip a not-yet-started step of the running task. The server resolves identity; the body names only the attempt. */
+  async skipTaskStep(sessionId: string, turnId: string, stepId: string, attemptId: string): Promise<void> {
+    return this.request<void>(API_ROUTES.skipTaskStep(sessionId, turnId, stepId), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attemptId }),
+    });
+  }
+
   async getTurnStatus(sessionId: string, turnId: string): Promise<TurnStatusResponse> {
     return this.request<TurnStatusResponse>(API_ROUTES.turnStatus(sessionId, turnId), { method: 'GET' });
   }

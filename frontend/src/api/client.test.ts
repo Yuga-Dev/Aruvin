@@ -201,6 +201,16 @@ describe('ApiClient HTTP operations', () => {
     );
   });
 
+  it('calls the skip-step endpoint with only the attemptId (identity stays server-side)', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 204, text: async () => '' });
+    const client = new ApiClient({ baseUrl: '/api', fetch: mockFetch });
+    await client.skipTaskStep('sess_1', 'turn_1', 's2', 'att_1');
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api' + API_ROUTES.skipTaskStep('sess_1', 'turn_1', 's2'),
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ attemptId: 'att_1' }) }),
+    );
+  });
+
   it('parses structured ClientErrorBody from non-2xx responses', async () => {
     const errorBody = {
       code: 'CONFLICT_ACTIVE_TURN',

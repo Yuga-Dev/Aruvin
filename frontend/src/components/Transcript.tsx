@@ -28,6 +28,7 @@ import { hideCalendarConfirmReplies } from '../features/plugins/google-calendar/
 import { groupVoiceMessages } from './group-voice-messages.ts';
 import { MessageItem } from './MessageItem.tsx';
 import { PromptTraveler } from './PromptTraveler.tsx';
+import { TaskCard } from './TaskCard.tsx';
 import { ScrollController } from './ScrollController.tsx';
 
 // oxlint-disable-next-line react/only-export-components -- pure placement helper shared with tests
@@ -102,7 +103,7 @@ export function Transcript({
     dispatch({ type: 'OPEN_CANVAS_ARTIFACT', payload: { artifactId } });
   }, [dispatch]);
   const messageActions = { activeArtifactId: state.canvasOpen ? state.activeCanvasArtifactId : null,
-    onOpenArtifact, onRetry: actions.retryTurn, onOpenMemorySettings };
+    onOpenArtifact, onRetry: actions.retryTurn, onSkipTaskStep: actions.skipTaskStep, onOpenMemorySettings };
   const scrollDependencies = useMemo(() => [
     state.messages,
     state.streamText,
@@ -216,6 +217,10 @@ export function Transcript({
               ...(state.activeTask ? { task: state.activeTask } : {}),
             }}
           />
+        ) : null}
+
+        {!state.isStreaming && state.activeTask?.outcome ? (
+          <div className="aurvin-task-ended"><TaskCard task={state.activeTask} /></div>
         ) : null}
 
         {children}

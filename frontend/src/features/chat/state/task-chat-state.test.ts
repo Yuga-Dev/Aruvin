@@ -26,6 +26,7 @@ import { describe, expect, it } from 'vitest';
 import { isStreamEvent, isSubmitTurnRequest, isVisibleMessage, type VisibleMessage } from '../../../api/protocol.ts';
 import type { TaskPlanEvent, TaskStepEvent } from '../../../api/task-protocol.ts';
 import { MessageItem } from '../../../components/MessageItem.tsx';
+import { TaskCard } from '../../../components/TaskCard.tsx';
 import { chatReducer, initialChatState } from './chat-reducer.ts';
 import type { ChatState } from './chat-types.ts';
 
@@ -106,5 +107,37 @@ describe('task mode chat state', () => {
     expect(html).toContain('Book a planning call');
     expect(html).toContain('Needs your approval');
     expect(html.indexOf('Task plan')).toBeLessThan(html.indexOf('Booked.'));
+  });
+
+  it('keeps a task that ends without completing: on the partial answer, or on its own with an outcome', () => {
+    const started = chatReducer(activeState(), { type: 'TASK_EVENT', payload: { ...ids, event: planEvent } });
+    const running = chatReducer(started, { type: 'TASK_EVENT', payload: { ...ids, event: step('s1', 'running') } });
+    // Partial answer present: the card rides on the terminal message.
+    const interrupted = chatReducer(running, { type: 'STREAM_INTERRUPTED' });
+    expect(interrupted.activeTask).toBeNull();
+    expect(interrupted.messages.at(-1)?.task).toMatchObject({ outcome: 'interrupted' });
+    expect(interrupted.messages.at(-1)?.task?.steps[0].status).toBe('failed');
+    // No answer text: the card stays as activeTask so the outcome is still visible.
+    const quiet = chatReducer({ ...running, streamText: '' }, { type: 'STREAM_CANCELLED' });
+    expect(quiet.activeTask).toMatchObject({ outcome: 'cancelled' });
+    expect(quiet.activeTask?.steps[0].status).toBe('skipped');
+    const budget = chatReducer({ ...running, streamText: '' }, { type: 'STREAM_ERROR',
+      payload: { code: 'STORAGE_BUDGET_EXCEEDED', message: 'x', retryable: false } });
+    expect(budget.activeTask?.outcome).toBe('budget_exceeded');
+    // The next submit starts clean.
+    expect(isStreamEvent({ type: 'completed', assistantMessageId: 'm', outcome: 'completed',
+      task: { ...quiet.activeTask, outcome: 'bogus' } })).toBe(false);
+  });
+
+  it('shows Skip only on queued steps of a live task, summaries, and the outcome notice', () => {
+    const task = { version: 1 as const, taskId: 'att-t1', plan: planEvent.plan,
+      steps: [{ stepId: 's1', status: 'done' as const, summary: 'Found two free slots.' },
+        { stepId: 's2', status: 'queued' as const }, { stepId: 's3', status: 'queued' as const }],
+      outcome: 'interrupted' as const };
+    const live = renderToStaticMarkup(createElement(TaskCard, { task, onSkip: async () => undefined }));
+    expect(live.match(/aurvin-task-skip/g)).toHaveLength(2);
+    expect(live).toContain('Found two free slots.');
+    expect(live).toContain('Task was interrupted. Retry to run it again.');
+    expect(renderToStaticMarkup(createElement(TaskCard, { task }))).not.toContain('aurvin-task-skip');
   });
 });

@@ -99,6 +99,7 @@ export const MessageItem = memo(function MessageItem({
   activeArtifactId = null,
   onOpenArtifact,
   onRetry,
+  onSkipTaskStep,
   onOpenMemorySettings,
 }: {
   message: VisibleMessage;
@@ -106,6 +107,8 @@ export const MessageItem = memo(function MessageItem({
   activeArtifactId?: string | null;
   onOpenArtifact?: (artifactId: string) => void;
   onRetry?: (turnId: string) => void;
+  /** Live task only: skip a queued step. */
+  onSkipTaskStep?: (stepId: string) => Promise<void>;
   onOpenMemorySettings?: () => void;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
@@ -226,7 +229,7 @@ export const MessageItem = memo(function MessageItem({
         </>
       ) : (
         <div className="aurvin-message-body">
-          {message.task ? <TaskCard task={message.task} /> : null}
+          {message.task ? <TaskCard task={message.task} {...(liveStatus && message.completionStatus === 'streaming' ? { onSkip: onSkipTaskStep } : {})} /> : null}
           {generatingClassName ? (
             <span className={generatingClassName}>Generating…</span>
           ) : (
