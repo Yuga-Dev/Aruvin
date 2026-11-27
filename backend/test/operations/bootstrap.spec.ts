@@ -13,16 +13,15 @@
  *    configured database access or paid inference during routine regressions.
  *
  * KEY COMPONENTS:
- *    - Fresh build: Compile source once; serialize external builds with this suite.
+ *    - Fresh build: test/global-build.ts compiles dist once before any spec runs.
  *    - Preload fixture: Inject deterministic assembly and cleanup failures.
  *    - Entry assertions: Known-code preservation and unknown-error secrecy.
  *    - Diagnostic HTTP: Live/not-ready separation and awaited IPC shutdown.
  * ============================================================================
  */
 
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
 
 const backend = new URL('../../', import.meta.url);
 const secret = 'mongodb://credential-marker:password@private.invalid sk-or-v1-secret-marker';
@@ -39,13 +38,6 @@ type Result = { code: number | null; signal: NodeJS.Signals | null;
 const CHILD_BOUND_MS = 60_000;
 // Vitest must not abort a case before the fixture's own bound reports it.
 const CASE_TIMEOUT_MS = 120_000;
-// The beforeAll build competes with the same parallel load and amplifies
-// super-linearly on this host: ~6s idle, ~44s at 1x CPU oversubscription and
-// ~200s at 2x. The old 60s build bound therefore failed before any child was
-// even started. This bound covers a contended build; a build that genuinely
-// hangs still fails the file.
-const BUILD_BOUND_MS = 600_000;
-const BUILD_TIMEOUT_MS = 660_000;
 // Loopback liveness must answer promptly; this still bounds a stalled server.
 const LIVENESS_ABORT_MS = 10_000;
 
@@ -55,16 +47,6 @@ function parseCounts(stdout: string): Counts | null {
   try { return JSON.parse(record.slice(8)) as Counts; }
   catch { return null; }
 }
-
-beforeAll(async () => {
-  await promisify(execFile)(process.execPath, [
-    fileURLToPath(new URL('node_modules/@nestjs/cli/bin/nest.js', backend)), 'build',
-  ], {
-    cwd: fileURLToPath(backend), timeout: BUILD_BOUND_MS, windowsHide: true,
-    env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot,
-      TEMP: process.env.TEMP, TMP: process.env.TMP },
-  });
-}, BUILD_TIMEOUT_MS);
 
 function launch(mode: string, entry = 'dist/main.js') {
   const url = (path: string) => JSON.stringify(new URL(path, backend).href);

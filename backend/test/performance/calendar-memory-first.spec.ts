@@ -1904,7 +1904,7 @@ it('mutation barrier blocks provider POST when any mandatory acknowledgement is 
       f.runtime.stopAccepting();
     }
   }
-});
+}, 60_000); // 14 full-runtime fixtures in one case: ~3.4s idle, flaked at the 5s default under load.
 
 it('mutation barrier refuses POST on cancellation, account invalidation, or lost ack without exact readback', async () => {
   // 1) Cancellation during held barrier step prevents POST.
