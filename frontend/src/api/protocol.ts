@@ -64,6 +64,14 @@ export const API_ROUTES = {
     `/sessions/${sessionId}/turns/${turnId}/retry-save`,
   skipTaskStep: (sessionId: string, turnId: string, stepId: string) =>
     `/sessions/${sessionId}/turns/${turnId}/steps/${stepId}/skip`,
+  searchSessions: '/sessions/search',
+  editTurn: (sessionId: string, turnId: string) =>
+    `/sessions/${sessionId}/turns/${turnId}/edit`,
+  regenerateTurn: (sessionId: string, turnId: string) =>
+    `/sessions/${sessionId}/turns/${turnId}/regenerate`,
+  messageFeedback: (sessionId: string, messageId: string) =>
+    `/sessions/${sessionId}/messages/${messageId}/feedback`,
+  exportSession: (sessionId: string) => `/sessions/${sessionId}/export.md`,
 } as const
 
 export const ATTEMPT_STATUSES = [
@@ -110,6 +118,35 @@ export type RetryTurnRequest = {
   idempotencyKey: string
   expectedEpoch?: string
   calendarProtocol?: 2
+}
+
+/** Release 1: edit the latest user turn (a new turn that supersedes the original). */
+export type EditTurnRequest = {
+  content: string
+  idempotencyKey: string
+  expectedEpoch?: string
+  calendarProtocol?: 2
+}
+
+/** Release 1: regenerate the latest turn; same envelope as retry. */
+export type RegenerateTurnRequest = RetryTurnRequest
+
+export type FeedbackRating = 'up' | 'down'
+export type FeedbackRequest = { rating: FeedbackRating | null }
+export type FeedbackResponse = { messageId: string; rating: FeedbackRating | null }
+
+export type SearchResult = {
+  sessionId: string
+  title: string
+  lastActivityAt: string
+  match: 'title' | 'message'
+  snippet?: string
+  messageId?: string
+}
+export type SearchSessionsResponse = {
+  items: SearchResult[]
+  nextCursor: string | null
+  degraded?: boolean
 }
 
 export type SessionSummary = {
@@ -169,6 +206,10 @@ export type VisibleMessage = {
   memoryUpdated?: boolean
   /** Task-mode plan and final step states (live and restored from history). */
   task?: TaskSnapshot
+  /** Release 1: id of the older message this one replaces. */
+  supersedes?: string
+  /** Release 1: the caller's own rating of this message. */
+  feedback?: FeedbackRating
 }
 
 export type ActiveSessionTurn = {
@@ -307,6 +348,10 @@ const APP_ERROR_CODES = [
   'CONFIGURATION_ERROR',
   'NOT_READY',
   'UNSUPPORTED_TOPOLOGY',
+  'REVISION_TOO_OLD',
+  'REVISION_NOT_LATEST',
+  'MESSAGE_NOT_SAVED',
+  'SEARCH_UNAVAILABLE',
 ] as const
 
 const OVERRIDE_MESSAGE = 'Identity, model, and API keys cannot be supplied by the client.'
@@ -349,6 +394,12 @@ function hasValidTask(value: Record<string, unknown>): boolean {
   return value.role === 'assistant' && isTaskSnapshot(value.task)
 }
 
+function hasValidRevisionFields(value: Record<string, unknown>): boolean {
+  return (!('supersedes' in value) || value.supersedes === undefined || isBoundedId(value.supersedes)) &&
+    (!('feedback' in value) || value.feedback === undefined ||
+      (value.role === 'assistant' && (value.feedback === 'up' || value.feedback === 'down')))
+}
+
 function hasValidMemoryUpdated(value: Record<string, unknown>): boolean {
   if (!('memoryUpdated' in value) || value.memoryUpdated === undefined) return true
   return value.role === 'assistant' && typeof value.memoryUpdated === 'boolean'
@@ -382,7 +433,8 @@ export function isVisibleMessage(value: unknown): value is VisibleMessage {
     hasValidWebProvenance(value) &&
     hasValidWeatherView(value) &&
     hasValidMemoryUpdated(value) &&
-    hasValidTask(value)
+    hasValidTask(value) &&
+    hasValidRevisionFields(value)
   )
 }
 
@@ -530,6 +582,34 @@ export function isSubmitTurnResponse(body: unknown): body is SubmitTurnResponse 
     ['sessionId', 'turnId', 'attemptId', 'userMessageId'].every(key => isBoundedId(body[key])) &&
     (!('processEpoch' in body) || isBoundedId(body.processEpoch)) &&
     body.streamPath === API_ROUTES.turnStream(body.sessionId as string, body.turnId as string)
+}
+
+export function isEditTurnRequest(body: unknown): body is EditTurnRequest {
+  if (!isRecord(body)) return false
+  if (!hasExactKeys(body, ['content', 'idempotencyKey',
+    ...('expectedEpoch' in body ? ['expectedEpoch'] : []),
+    ...('calendarProtocol' in body ? ['calendarProtocol'] : [])]) ||
+    ('calendarProtocol' in body && body.calendarProtocol !== 2) ||
+    ('expectedEpoch' in body && !isBoundedId(body.expectedEpoch))) return false
+  return typeof body.content === 'string' && body.content.length > 0 && body.content.length <= 32_000 &&
+    typeof body.idempotencyKey === 'string' && body.idempotencyKey.length >= 8 && body.idempotencyKey.length <= 128
+}
+
+export const isRegenerateTurnRequest = (body: unknown): body is RegenerateTurnRequest => isRetryTurnRequest(body)
+
+export function isFeedbackResponse(value: unknown): value is FeedbackResponse {
+  return isRecord(value) && hasExactKeys(value, ['messageId', 'rating']) && isBoundedId(value.messageId) &&
+    (value.rating === null || value.rating === 'up' || value.rating === 'down')
+}
+
+export function isSearchSessionsResponse(value: unknown): value is SearchSessionsResponse {
+  return isRecord(value) && Array.isArray(value.items) && value.items.length <= 20 &&
+    (value.nextCursor === null || typeof value.nextCursor === 'string') &&
+    (!('degraded' in value) || typeof value.degraded === 'boolean') &&
+    value.items.every(i => isRecord(i) && isBoundedId(i.sessionId) && typeof i.title === 'string' &&
+      typeof i.lastActivityAt === 'string' && (i.match === 'title' || i.match === 'message') &&
+      (!('snippet' in i) || typeof i.snippet === 'string') &&
+      (!('messageId' in i) || isBoundedId(i.messageId)))
 }
 
 export function isRetryTurnRequest(body: unknown): body is RetryTurnRequest {

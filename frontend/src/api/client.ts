@@ -34,7 +34,12 @@ import {
   isSubmitTurnRequest,
   isSubmitTurnResponse,
   isVisibleMessageList,
+  type EditTurnRequest,
+  type FeedbackRating,
+  type FeedbackResponse,
   type ListMessagesResponse,
+  type RegenerateTurnRequest,
+  type SearchSessionsResponse,
   type ListSessionsResponse,
   type RetryTurnRequest,
   type SessionSummary,
@@ -42,6 +47,10 @@ import {
   type SubmitTurnResponse,
   type TurnStatusResponse,
 } from './protocol.ts';
+
+function notImplemented(what: string): ApiClientError {
+  return new ApiClientError('NOT_IMPLEMENTED', `${what} is not available yet.`, 0, false);
+}
 
 export class ApiClientError extends Error {
   readonly code: string;
@@ -459,6 +468,28 @@ export class ApiClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ attemptId }),
     });
+  }
+
+  // Release 1 stubs (unit 0): bodies belong to units A (search), B (edit/regenerate) and C (feedback/export).
+  // They fail closed so nothing can appear to work before its feature flag and backend exist.
+  async searchSessions(_query: string, _options?: { cursor?: string | null; limit?: number; signal?: AbortSignal }): Promise<SearchSessionsResponse> {
+    throw notImplemented('Search');
+  }
+
+  async editTurn(_sessionId: string, _turnId: string, _request: EditTurnRequest, _options?: { signal?: AbortSignal }): Promise<SubmitTurnResponse> {
+    throw notImplemented('Edit');
+  }
+
+  async regenerateTurn(_sessionId: string, _turnId: string, _request: RegenerateTurnRequest, _options?: { signal?: AbortSignal }): Promise<SubmitTurnResponse> {
+    throw notImplemented('Regenerate');
+  }
+
+  async putFeedback(_sessionId: string, _messageId: string, _rating: FeedbackRating | null): Promise<FeedbackResponse> {
+    throw notImplemented('Feedback');
+  }
+
+  async exportSession(_sessionId: string): Promise<Blob> {
+    throw notImplemented('Export');
   }
 
   async getTurnStatus(sessionId: string, turnId: string): Promise<TurnStatusResponse> {

@@ -372,6 +372,10 @@ export const WEB_SEARCH_INDEXES: AppIndex[] = [
   },
 ];
 
+// Release 1 scaffolding: unit A (search) and unit C (feedback) add entries; empty until then.
+export const SEARCH_INDEXES: AppIndex[] = [];
+export const FEEDBACK_INDEXES: AppIndex[] = [];
+
 // Cross-user native retention scan; not part of the existing intersection index set.
 const EPHEMERAL_SESSION_SWEEP_INDEX: AppIndex = {
   collection: 'sessions',
@@ -381,7 +385,7 @@ const EPHEMERAL_SESSION_SWEEP_INDEX: AppIndex = {
 
 export async function setupIndexes(db: Db): Promise<void> {
   try {
-    for (const index of [...APP_INDEXES, EPHEMERAL_SESSION_SWEEP_INDEX, ...CALENDAR_INDEXES, ...WEB_SEARCH_INDEXES]) {
+    for (const index of [...APP_INDEXES, EPHEMERAL_SESSION_SWEEP_INDEX, ...CALENDAR_INDEXES, ...WEB_SEARCH_INDEXES, ...SEARCH_INDEXES, ...FEEDBACK_INDEXES]) {
       await db.collection(index.collection).createIndex(index.keys, index.options);
     }
   } catch {

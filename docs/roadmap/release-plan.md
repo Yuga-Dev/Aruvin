@@ -9,8 +9,8 @@ Each release ships one complete, user-facing slice. A release starts only after 
 | 2. Canvas and workspace panel | Generalise Canvas into the right-hand workspace panel (resizable, full screen), PNG export, print, "Ask about this", data tables with sort and filter, more diagram types, calendar day/week views | Partly pulled forward (user decision, 27 November 2026): bundle code-splitting, PNG export, print, more diagram types, calendar day/week views and data tables, behind flags where user-visible. Workspace panel and "Ask about this" wait for Release 1. |
 | 3. Agent execution | Versioned agent event contract, task plan and timeline, tool activity, approval cards enforced by backend policy, cancellation, execution history, general tool registry | Planned |
 | 4. Voice and multimodal | Voice UI refresh, phone voice UX, file and image uploads with validation and limits | Planned |
-| 5. Projects and memory | Projects (ownership, instructions, context), memory inspection, editing and deletion with audit | Planned |
-| 6. Everyday integrations | Calendar edit, reschedule and delete; email; document storage. All writes need approval and credentials stay server-side. | Planned |
+| 5. Projects and memory | Projects (ownership, instructions, context), memory inspection, editing and deletion with audit | Planned; decisions accepted 27 November 2026 ([plan](../release-5/plan.md)). Memory units M1/M2 pulled forward (D11); Projects after Release 1 |
+| 6. Everyday integrations | Calendar edit, reschedule and delete; email; document storage. All writes need approval and credentials stay server-side. | Planned; decisions accepted 27 November 2026 ([plan](../release-6/plan.md)) |
 | 7. Documents and developer workspace | Word, Excel and PowerPoint generation; code editor; isolated code execution; live preview | Planned |
 | 8. Automations and advanced intelligence | Scheduled and recurring tasks (BullMQ + Redis), web monitoring, deep research, multi-agent view, model selection | Planned |
 

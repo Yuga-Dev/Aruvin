@@ -21,4 +21,4 @@ export { ChatHttpModule } from './chat-http.module.js';
 export { ChatHttpService } from './chat-http.service.js';
 export { ChatStreamTransport } from './chat-stream.transport.js';
 export { configureChatHttp } from './configure-chat-http.js';
-export type { ChatHttpOptions } from './options.js';
+export type { ChatHttpOptions, SearchPort, FeedbackPort } from './options.js';

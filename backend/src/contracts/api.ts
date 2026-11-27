@@ -48,6 +48,14 @@ export const API_ROUTES = {
     `/sessions/${sessionId}/turns/${turnId}/retry`,
   retrySave: (sessionId: string, turnId: string) =>
     `/sessions/${sessionId}/turns/${turnId}/retry-save`,
+  searchSessions: '/sessions/search',
+  editTurn: (sessionId: string, turnId: string) =>
+    `/sessions/${sessionId}/turns/${turnId}/edit`,
+  regenerateTurn: (sessionId: string, turnId: string) =>
+    `/sessions/${sessionId}/turns/${turnId}/regenerate`,
+  messageFeedback: (sessionId: string, messageId: string) =>
+    `/sessions/${sessionId}/messages/${messageId}/feedback`,
+  exportSession: (sessionId: string) => `/sessions/${sessionId}/export.md`,
   skipTaskStep: (sessionId: string, turnId: string, stepId: string) =>
     `/sessions/${sessionId}/turns/${turnId}/steps/${stepId}/skip`,
 } as const;
@@ -78,6 +86,67 @@ export const retryTurnRequestSchema = z
     idempotencyKey: z.string().min(8).max(128),
     expectedEpoch: idSchema.optional(),
     calendarProtocol: z.union([z.literal(2), z.literal(3)]).optional(),
+  })
+  .strict();
+
+/** Edit the latest user turn: a new turn whose user message supersedes the original. */
+export const editTurnRequestSchema = z
+  .object({
+    content: z.string().min(1).max(DEFAULT_BUDGETS.maxInputChars),
+    idempotencyKey: z.string().min(8).max(128),
+    expectedEpoch: idSchema.optional(),
+    calendarProtocol: z.union([z.literal(2), z.literal(3)]).optional(),
+  })
+  .strict();
+
+/** Regenerate the latest turn: same envelope as retry, allowed after completion. */
+export const regenerateTurnRequestSchema = z
+  .object({
+    idempotencyKey: z.string().min(8).max(128),
+    expectedEpoch: idSchema.optional(),
+    calendarProtocol: z.union([z.literal(2), z.literal(3)]).optional(),
+  })
+  .strict();
+
+export const feedbackRatingSchema = z.enum(['up', 'down']);
+/** rating null clears the caller's rating. */
+export const feedbackRequestSchema = z.object({ rating: feedbackRatingSchema.nullable() }).strict();
+export const feedbackResponseSchema = z
+  .object({ messageId: idSchema, rating: feedbackRatingSchema.nullable() })
+  .strict();
+
+export const SEARCH_QUERY_MAX_CHARS = 100;
+export const SEARCH_LIMIT_MAX = 20;
+export const SEARCH_LIMIT_DEFAULT = 10;
+/** Raw query-string shape (all scalars are strings on the wire). */
+export const searchSessionsQuerySchema = z
+  .object({
+    q: z.string().trim().min(2).max(SEARCH_QUERY_MAX_CHARS),
+    cursor: z.string().min(1).max(2048).optional(),
+    limit: z
+      .string()
+      .regex(/^[1-9]\d?$/u)
+      .refine(v => Number(v) <= SEARCH_LIMIT_MAX)
+      .optional(),
+  })
+  .strict();
+
+export const searchResultSchema = z
+  .object({
+    sessionId: idSchema,
+    title: z.string().min(1).max(DEFAULT_BUDGETS.titleMaxChars),
+    lastActivityAt: isoDateSchema,
+    match: z.enum(['title', 'message']),
+    snippet: z.string().max(300).optional(),
+    messageId: idSchema.optional(),
+  })
+  .strict();
+
+export const searchSessionsResponseSchema = z
+  .object({
+    items: z.array(searchResultSchema).max(SEARCH_LIMIT_MAX),
+    nextCursor: z.string().min(1).nullable(),
+    degraded: z.boolean().optional(),
   })
   .strict();
 
@@ -143,6 +212,10 @@ export const visibleMessageSchema = messageRecordObjectSchema.pick({
   webActivities: true,
   memoryUpdated: true,
   task: true,
+  supersedes: true,
+}).extend({
+  /** The caller's own rating only. */
+  feedback: feedbackRatingSchema.optional(),
 }).superRefine((v, ctx) => {
   if ((v.webSources !== undefined || v.webActivities !== undefined) && v.role !== 'assistant') {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['role'],
@@ -284,6 +357,14 @@ export const pageRequestSchema = z
 export type SubmitTurnRequest = z.infer<typeof submitTurnRequestSchema>;
 export type CreateSessionRequest = SubmitTurnRequest & { sessionId: null };
 export type RetryTurnRequest = z.infer<typeof retryTurnRequestSchema>;
+export type EditTurnRequest = z.infer<typeof editTurnRequestSchema>;
+export type RegenerateTurnRequest = z.infer<typeof regenerateTurnRequestSchema>;
+export type FeedbackRating = z.infer<typeof feedbackRatingSchema>;
+export type FeedbackRequest = z.infer<typeof feedbackRequestSchema>;
+export type FeedbackResponse = z.infer<typeof feedbackResponseSchema>;
+export type SearchSessionsQuery = z.infer<typeof searchSessionsQuerySchema>;
+export type SearchResult = z.infer<typeof searchResultSchema>;
+export type SearchSessionsResponse = z.infer<typeof searchSessionsResponseSchema>;
 export type CancelTurnRequest = z.infer<typeof cancelTurnRequestSchema>;
 export type SubmitTurnResponse = z.infer<typeof submitTurnResponseSchema>;
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;
@@ -323,5 +404,6 @@ export function toVisibleMessage(record: MessageRecord): VisibleMessage {
     ...(record.webActivities ? { webActivities: record.webActivities } : {}),
     ...(record.memoryUpdated === true ? { memoryUpdated: true } : {}),
     ...(record.task ? { task: record.task } : {}),
+    ...(record.supersedes ? { supersedes: record.supersedes } : {}),
   });
 }
