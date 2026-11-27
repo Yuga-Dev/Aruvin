@@ -52,10 +52,6 @@ import {
   type TurnStatusResponse,
 } from './protocol.ts';
 
-function notImplemented(what: string): ApiClientError {
-  return new ApiClientError('NOT_IMPLEMENTED', `${what} is not available yet.`, 0, false);
-}
-
 export class ApiClientError extends Error {
   readonly code: string;
   readonly status: number;
