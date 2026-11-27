@@ -113,6 +113,7 @@ import type { ChatHttpOptions, ChatStreamTransport } from './http/index.js';
 import { NOOP_FEATURE_PORTS } from './http/noop-ports.js';
 import { finishLocalMaintenanceForUsers } from './operations/local-recovery.js';
 import { EPHEMERAL_SESSION_MAX_AGE_MS } from './persistence/sessions.js';
+import { MongoSearch } from './persistence/search.js';
 import type { ExecutionReservationPort, LiveKitAdmissionPort, LiveKitAdmissionTicket,
   SpeechUsage } from './contracts/voice.js';
 import { ProviderFault, socketFactory, type SocketFactory } from './voice/providers/provider-link.js';
@@ -1256,6 +1257,11 @@ export class AppService {
       currentConfig: { current: () => this.configFor(identity.resolve().userId) },
       prepareWeb: userId => this.prepareWebUser(userId),
       ...NOOP_FEATURE_PORTS,
+      search: { search: async (userId, query) => {
+        const p = this.persistence;
+        if (!p) throw new AppError('SEARCH_UNAVAILABLE', 'Search is unavailable.');
+        return new MongoSearch(p.sessions.store).search(userId, query);
+      } },
       ...(voice ? { executionReservations: voice.reservations } : {}),
     };
   }

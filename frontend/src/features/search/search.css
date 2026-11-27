@@ -1,0 +1,13 @@
+/* Release 1 unit A: sidebar search field, skeleton and notes. Uses existing shell tokens. */
+.aurvin-sidebar-search { margin-top: 8px; }
+.aurvin-sidebar-search-input {
+  width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 8px;
+  border: 1px solid var(--aurvin-border, currentColor); background: transparent; color: inherit; font: inherit;
+}
+.aurvin-search-results { margin-top: 8px; overflow-y: auto; }
+.aurvin-search-results ul { list-style: none; margin: 0; padding: 0; }
+.aurvin-search-skeleton { height: 28px; margin: 6px 0; border-radius: 6px; background: currentColor; opacity: 0.08; }
+.aurvin-search-note { margin: 8px 4px; font-size: 0.8125rem; opacity: 0.75; }
+.aurvin-search-snippet {
+  font-size: 0.75rem; opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}

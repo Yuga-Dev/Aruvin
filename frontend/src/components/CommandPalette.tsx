@@ -9,9 +9,9 @@
  *
  * ROLE IN PROJECT:
  *    Mounted by ChatView. Offers only actions backed by working code: new
- *    chat, Integrations, Settings, theme switching, and jumping to a chat
- *    by title among the conversations already loaded in the sidebar (not a
- *    server-side search; full search is Release 1).
+ *    chat, Integrations, Settings, theme switching, jumping to a chat by title
+ *    among those loaded in the sidebar and, behind the conversationSearch flag,
+ *    a server-side "Messages" group (Release 1 unit A).
  *
  * KEY COMPONENTS:
  *    - CommandPalette: combobox + listbox dialog with focus trap
@@ -19,26 +19,55 @@
  * ============================================================================
  */
 
-import { useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useDialogFocusTrap } from '../ui/Dialog.tsx';
 import { Kbd } from '../ui/primitives.tsx';
 import { IconSearch } from './icons.tsx';
-import { filterPaletteItems, type PaletteItem } from './command-palette.ts';
+import { FEATURE_FLAGS } from '../app/feature-flags.ts';
+import { useChat } from '../features/chat/state/chat-context.tsx';
+import { revealMessage, useConversationSearch } from '../features/search/use-conversation-search.ts';
+import { SEARCH_DEGRADED_NOTICE, SEARCH_ERROR_NOTICE, SEARCH_UNSAVED_HINT } from '../features/search/search-controller.ts';
+import { filterPaletteItems, messageSearchItems, type PaletteItem } from './command-palette.ts';
 import '../styles/shell.css';
 
-export function CommandPalette({ open, items, onClose }: { open: boolean; items: readonly PaletteItem[]; onClose: () => void }) {
+export function CommandPalette({ open, items, onClose, searchEnabled = FEATURE_FLAGS.conversationSearch }:
+  { open: boolean; items: readonly PaletteItem[]; onClose: () => void; searchEnabled?: boolean }) {
   if (!open) return null;
-  return <PaletteDialog items={items} onClose={onClose} />;
+  return <PaletteDialog items={items} onClose={onClose} searchEnabled={searchEnabled} />;
 }
 
-function PaletteDialog({ items, onClose }: { items: readonly PaletteItem[]; onClose: () => void }) {
+/** Feeds server message matches into the palette; mounted only when search is enabled (needs ChatProvider). */
+function MessageSearchBridge({ query, onItems }: { query: string; onItems: (items: PaletteItem[]) => void }) {
+  const { client, actions } = useChat();
+  const search = useConversationSearch(client);
+  const { setQuery } = search;
+  useEffect(() => { setQuery(query); }, [query, setQuery]);
+  const { items } = search.state;
+  useEffect(() => {
+    onItems(messageSearchItems(items.filter((r) => r.match === 'message'), (r) => {
+      void actions.selectSession(r.sessionId, r.title);
+      revealMessage(r.messageId);
+    }));
+  }, [items, actions, onItems]);
+  const { status, degraded } = search.state;
+  return (
+    <p className="aurvin-palette-footer" role="status">
+      {status === 'loading' ? 'Searching messages…'
+        : status === 'error' ? <>{SEARCH_ERROR_NOTICE} <button type="button" className="aurvin-quiet-btn" onClick={search.retry}>Retry</button></>
+        : degraded ? SEARCH_DEGRADED_NOTICE : SEARCH_UNSAVED_HINT}
+    </p>
+  );
+}
+
+function PaletteDialog({ items, onClose, searchEnabled }: { items: readonly PaletteItem[]; onClose: () => void; searchEnabled: boolean }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const ids = useId();
   const listId = `${ids}-list`;
-  const results = useMemo(() => filterPaletteItems(items, query), [items, query]);
+  const [found, setFound] = useState<PaletteItem[]>([]);
+  const results = useMemo(() => filterPaletteItems([...items, ...found], query), [items, found, query]);
   const activeIndex = Math.min(active, Math.max(results.length - 1, 0));
 
   useDialogFocusTrap(dialogRef, { open: true, onEscape: onClose, initialFocusRef: inputRef });
@@ -114,7 +143,9 @@ function PaletteDialog({ items, onClose }: { items: readonly PaletteItem[]; onCl
             ];
           })}
         </ul>
-        <p className="aurvin-palette-footer">Chats are searched by title among those loaded in the sidebar.</p>
+        {searchEnabled
+          ? <MessageSearchBridge query={query} onItems={setFound} />
+          : <p className="aurvin-palette-footer">Chats are searched by title among those loaded in the sidebar.</p>}
       </div>
     </div>
   );
