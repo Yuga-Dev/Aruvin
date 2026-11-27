@@ -13,7 +13,7 @@ import { openPersistence } from '../../src/persistence/persistence.js';
 import { key, type StoredDocument } from '../../src/persistence/records.js';
 import { acquireLocalGuard } from '../../src/operations/local-guard.js';
 import { randomUUID } from 'node:crypto';
-import { APP_INDEXES, CALENDAR_INDEXES, WEB_SEARCH_INDEXES } from '../../src/persistence/indexes.js';
+import { APP_INDEXES, CALENDAR_INDEXES, WEB_SEARCH_INDEXES, SEARCH_INDEXES, FEEDBACK_INDEXES } from '../../src/persistence/indexes.js';
 import { Telemetry } from '../../src/operations/telemetry.js';
 
 function fixture(failSetup=false) {
@@ -66,7 +66,7 @@ it.skipIf(process.platform !== 'win32')('production opt-in completes guarded set
     const opened=await openPersistence(f.config);
     expect(f.get()?.local).toMatchObject({ mode:'local-mutation-v1',mutation:{ state:'idle',token:null },pending:false });
     expect(f.get()?.local.binding.databaseHash).toBe(key('exact-configured-database',f.config.persistence.mongoUri,f.config.persistence.mongoDbName));
-    expect(f.events.filter(e => e.startsWith('ddl:'))).toHaveLength(APP_INDEXES.length + CALENDAR_INDEXES.length + WEB_SEARCH_INDEXES.length + 3);
+    expect(f.events.filter(e => e.startsWith('ddl:'))).toHaveLength(APP_INDEXES.length + CALENDAR_INDEXES.length + WEB_SEARCH_INDEXES.length + SEARCH_INDEXES.length + FEEDBACK_INDEXES.length + 3);
     await opened.close();expect(f.get()?.local.released).toBe(true);expect(f.events.slice(-2)).toEqual(['release','close-client']);
     const guard=await acquireLocalGuard(key('configured-local-db',f.config.persistence.mongoUri,f.config.persistence.mongoDbName));
     await guard.close(); // Guard is released only after client cleanup, provenance is retained.

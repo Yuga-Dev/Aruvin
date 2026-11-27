@@ -373,7 +373,15 @@ export const WEB_SEARCH_INDEXES: AppIndex[] = [
 ];
 
 // Release 1 scaffolding: unit A (search) and unit C (feedback) add entries; empty until then.
-export const SEARCH_INDEXES: AppIndex[] = [];
+// One text index per collection: reserved for conversation search. default_language 'none' avoids stemming
+// surprises; visibility is filtered at query time. Rollback: dropIndex('user_content_text') (titles keep working).
+export const SEARCH_INDEXES: AppIndex[] = [
+  {
+    collection: 'messages',
+    keys: { userId: 1, content: 'text' },
+    options: { name: 'user_content_text', default_language: 'none' },
+  },
+];
 export const FEEDBACK_INDEXES: AppIndex[] = [];
 
 // Cross-user native retention scan; not part of the existing intersection index set.
