@@ -24,6 +24,7 @@ export default defineConfig({
   test: {
     globals: true,
     root: './',
+    globalSetup: ['./test/global-build.ts'],
     include: ['**/*.spec.ts'],
     exclude: [
       'node_modules/**',

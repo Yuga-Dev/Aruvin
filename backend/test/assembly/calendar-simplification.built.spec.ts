@@ -60,4 +60,4 @@ it('runs the built direct assembly with native initial repair continuation contr
     expect(stored.items.filter(message => message.role === 'user')).toHaveLength(1);
     expect(stored.items.filter(message => message.role === 'assistant')).toHaveLength(1);
   } finally { await h.dispose(); }
-}, 20000);
+}, 90_000); // ~14s idle: vite-node transforms the whole emitted dist graph; 20s flaked under load.
