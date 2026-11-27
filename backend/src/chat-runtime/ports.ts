@@ -85,7 +85,7 @@ export type ReviseTurnCommand = Omit<import('../contracts/runtime.js').RetryTurn
 };
 /** Off-path user memory has no storage dependency on the model hot path. */
 export type UserMemoryRuntime = {
-  cache: Pick<UserMemoryService, 'cachedMemory' | 'cachedSnapshot'>;
+  cache: Pick<UserMemoryService, 'cachedMemory' | 'cachedSnapshot'> & Partial<Pick<UserMemoryService, 'onUserChange'>>;
   writer: Pick<MemoryWriterService, 'applyInstruction' | 'synthesize'>;
   trackWrite?: <T>(run: () => Promise<T>) => Promise<T>;
 };

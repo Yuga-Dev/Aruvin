@@ -401,6 +401,8 @@ export class DurableChatRuntime {
     if (d.userMemory) {
       this.userMemoryScheduler = new UserMemoryScheduler({
         enabled: u => this.memoryEnabled(u),
+        // A confirmed user edit, delete or toggle drops queued passive-learning turns.
+        userChanges: l => d.userMemory!.cache.onUserChange?.(l) ?? (() => {}),
         synthesize: (u, delta, scope) => d.userMemory!.writer.synthesize(u, delta, scope),
         publish: (u, s, last, changed, signal, mark = last) => {
           const write = async () => {
