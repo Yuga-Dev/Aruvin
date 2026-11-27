@@ -22,7 +22,7 @@ import {
 import { calendarReplyReferenceSchema } from '../contracts/calendar-authority.js';
 import type { ContextSourceSnapshot } from '../contracts/context.js';
 import { idSchema } from '../contracts/identifiers.js';
-import { messageRecordSchema, type MessageRecord } from '../contracts/message.js';
+import { isValidSupersession, messageRecordSchema, type MessageRecord } from '../contracts/message.js';
 import { accountingRecordSchema, type AccountingRecord } from '../contracts/metadata.js';
 import { voiceDeliveryRecordSchema, type VoiceDeliveryRecord } from '../contracts/voice.js';
 import { voiceAccountingRecordSchema, type VoiceAccountingRecord } from '../contracts/voice-accounting.js';
@@ -43,6 +43,7 @@ import {
   calendarSourceExpired, redactCalendarMessage, redactCalendarMessageForAccount, redactCalendarSource,
 } from '../persistence/calendar-records.js';
 import { eligible } from '../context/reference-selection.js';
+import { contextRecords } from './history.js';
 import { AppError } from '../platform/errors/app-error.js';
 import { memoryWebRecordSchema, type MemoryWebRecord } from '../persistence/memory-web-records.js';
 import type { WebToolGroup } from './memory-web-state.js';
@@ -74,6 +75,9 @@ const acceptanceSchema = z.object({ sessionId: idSchema.nullable(), requestKey: 
     providerTurnId: idSchema }).strict().nullable(),
   retryOf: z.object({ turnId: idSchema, userMessageId: idSchema, inputEventId: idSchema,
     sequence: z.number().int().nonnegative().safe(), createdAt: z.string().datetime(), previousAttemptId: idSchema }).strict().optional(),
+  /** Release 1 edit/regenerate: what this turn replaces. Supersession ids are computed once at admission. */
+  revise: z.object({ kind: z.enum(['edit', 'regenerate']), ofTurnId: idSchema, ofAttemptId: idSchema.optional(),
+    supersedesUser: idSchema.optional(), supersedesAssistant: idSchema.optional() }).strict().optional(),
 }).strict();
 export type MemoryAcceptance = z.infer<typeof acceptanceSchema>;
 export type MemoryTurn = Readonly<MemoryAcceptance & {
@@ -268,7 +272,7 @@ function terminalEnvelope(turn: MemoryTurn, status: MemoryTerminal['status'], co
   const base = { schemaVersion: 1, ...scope, createdAt: turn.createdAt, truncated: status === 'truncated',
     mode: turn.mode, ...(turn.voice ? { visibility: 'internal', voiceSessionId: turn.voice.voiceSessionId } : {}) };
   const input = messageRecordSchema.parse({ ...base, role: 'user', content: turn.content,
-    attemptId: null,
+    attemptId: null, ...(turn.revise?.supersedesUser ? { supersedes: turn.revise.supersedesUser } : {}),
     messageId: turn.userMessageId, eventId: turn.inputEventId, sequence: turn.retryOf?.sequence ?? turn.sequence,
     createdAt: turn.retryOf?.createdAt ?? turn.createdAt,
     completionStatus: 'accepted', truncated: false });
@@ -281,6 +285,7 @@ function terminalEnvelope(turn: MemoryTurn, status: MemoryTerminal['status'], co
     ...(webActivities?.length ? { webActivities } : {}),
     ...(memoryUpdated === true ? { memoryUpdated: true } : {}),
     ...(task ? { task } : {}),
+    ...(turn.revise?.supersedesAssistant ? { supersedes: turn.revise.supersedesAssistant } : {}),
     messageId: turn.outputMessageId, eventId: turn.outputEventId, sequence: turn.sequence + 1,
     completionStatus: status });
   return { schemaVersion: 1, epoch: turn.epoch, userId: turn.userId, sessionId: turn.sessionId,
@@ -389,7 +394,8 @@ export class MemoryFirstFoundation {
     const sessionId = sessionIdFor(this.options.userId, c.sessionId, c.requestKey);
     const s = this.sessions.get(sessionId);
     // Configuration is pinned on initial acceptance, not changed by a transport retry.
-    const payloadHash = key('memory-request', c.mode, c.content, String(c.ephemeral === true), JSON.stringify(c.calendarReplyTo), JSON.stringify(c.voice), JSON.stringify(c.retryOf ?? null));
+    const payloadHash = key('memory-request', c.mode, c.content, String(c.ephemeral === true), JSON.stringify(c.calendarReplyTo), JSON.stringify(c.voice), JSON.stringify(c.retryOf ?? null),
+      ...(c.revise ? [JSON.stringify(c.revise)] : []));
     const previous = s?.requests.get(c.requestKey);
     if (previous) {
       if (previous.payloadHash !== payloadHash) throw new Error('Request payload mismatch.');
@@ -414,6 +420,13 @@ export class MemoryFirstFoundation {
     const attemptId = attemptIdFor(this.options.userId, sessionId, c.requestKey);
     const userMessageId = c.retryOf?.userMessageId ?? inputId(this.options.userId, sessionId, attemptId);
     const outputMessageId = key('output', this.options.userId, sessionId, attemptId);
+    // The contract rule (same role; assistant same turn, user different turn) is checked before any superseding record exists.
+    if (c.revise?.supersedesAssistant && !isValidSupersession({ messageId: outputMessageId, role: 'assistant', turnId },
+        { messageId: c.revise.supersedesAssistant, role: 'assistant', turnId: c.revise.ofTurnId }))
+      throw new Error('Invalid supersession.');
+    if (c.revise?.supersedesUser && !isValidSupersession({ messageId: userMessageId, role: 'user', turnId },
+        { messageId: c.revise.supersedesUser, role: 'user', turnId: c.revise.ofTurnId }))
+      throw new Error('Invalid supersession.');
     const turn = freeze({ ...c, userId: this.options.userId, sessionId, epoch: this.options.epoch,
       payloadHash, turnId, attemptId, userMessageId, outputMessageId,
       inputEventId: c.retryOf?.inputEventId ?? eventIdFor(this.options.userId, sessionId, userMessageId),
@@ -843,7 +856,9 @@ export class MemoryFirstFoundation {
     const s = this.owned(turn);
     if (s.active !== turn || s.fenced || turn.contextVersion !== s.version) throw new Error('Stale context.');
     const cut = s.base?.manifest.activeSummaryRef?.sourceRange.toSequence ?? -1;
-    const records = this.records(turn.sessionId).filter(eligible).filter(r => r.sequence > cut);
+    // An edit replaces its whole earlier turn before that input is archived; a regenerate drops its own earlier answer.
+    const records = contextRecords(this.records(turn.sessionId), turn.turnId, turn.revise?.supersedesUser)
+      .filter(eligible).filter(r => r.sequence > cut);
     const activeSummaryRef = s.base?.manifest.activeSummaryRef ?? null;
     const summary = activeSummaryForRead(s.base?.summary ?? null, this.now());
     const manifest = agentMemoryManifestSchema.parse({ schemaVersion: 1,

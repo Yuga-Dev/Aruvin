@@ -27,7 +27,7 @@ import type {
   CalendarStreamEvent,
   CalendarStreamEventV3,
 } from '../../../api/calendar-protocol.ts';
-import type { SaveStateSnapshot } from '../../../api/protocol.ts';
+import type { SaveStateSnapshot, SubmitTurnResponse } from '../../../api/protocol.ts';
 import type { ChatAction, ChatState } from './chat-types.ts';
 import { canStartLiveVoiceForChat } from './chat-reducer.ts';
 import {
@@ -1187,32 +1187,30 @@ export function useChatActions(
     [client],
   );
 
-  const retryTurn = useCallback(
-    async (turnId: string, targetSessionId?: string) => {
-      const sessionId = targetSessionId ?? stateRef.current.activeSessionId;
-      if (!sessionId || voiceLease.current || stateRef.current.voiceInput ||
-        stateRef.current.isStreaming || stateRef.current.isSubmitting ||
-        isTurnBusy(stateRef.current.turnStatus)) {
-        return;
-      }
-
+  /**
+   * One streamed request path for retry, regenerate and edit: same idempotency, abort, recovery and
+   * stream handling. `start` issues the POST; `before` runs once the key exists (optimistic UI).
+   */
+  const runTurnRequest = useCallback(
+    async (
+      start: (idempotencyKey: string, signal: AbortSignal) => Promise<SubmitTurnResponse>,
+      failure: { code: string; message: string },
+      before?: (idempotencyKey: string) => void,
+      /** True when `before` added an optimistic message that a pre-acceptance failure must remove. */
+      optimistic = false,
+    ) => {
+      let accepted = false;
       const idempotencyKey = crypto.randomUUID();
       const generation = ++generationRef.current;
       abortSessionReconcile();
       const abortController = new AbortController();
       activeAbortControllerRef.current = abortController;
 
+      before?.(idempotencyKey);
       dispatch({ type: 'STREAM_STATUS', payload: { status: 'generating', truncated: false } });
 
       try {
-        const response = await runWithPendingRecovery(client, () =>
-          client.retryTurn(
-            sessionId,
-            turnId,
-            { idempotencyKey, calendarProtocol: 2 },
-            { signal: abortController.signal },
-          ),
-        );
+        const response = await runWithPendingRecovery(client, () => start(idempotencyKey, abortController.signal));
 
         coalescer.attachTurn({
           sessionId: response.sessionId,
@@ -1220,6 +1218,7 @@ export function useChatActions(
           attemptId: response.attemptId,
         });
 
+        accepted = true;
         dispatch({
           type: 'TURN_ACCEPTED',
           payload: {
@@ -1267,10 +1266,9 @@ export function useChatActions(
           return;
         }
         coalescer.cancel();
-        dispatch({
-          type: 'STREAM_ERROR',
-          payload: toClientError(err, 'RETRY_FAILED', 'Retry failed'),
-        });
+        const clientError = toClientError(err, failure.code, failure.message);
+        if (optimistic && !accepted) dispatch({ type: 'TURN_SUBMIT_ERROR', payload: { error: clientError, preservedContent: '' } });
+        else dispatch({ type: 'STREAM_ERROR', payload: clientError });
       } finally {
         if (activeAbortControllerRef.current === abortController) {
           activeAbortControllerRef.current = null;
@@ -1289,6 +1287,58 @@ export function useChatActions(
       voiceLease,
       coalescer,
     ],
+  );
+
+  const retryTurn = useCallback(
+    async (turnId: string, targetSessionId?: string) => {
+      const sessionId = targetSessionId ?? stateRef.current.activeSessionId;
+      if (!sessionId || voiceLease.current || stateRef.current.voiceInput ||
+        stateRef.current.isStreaming || stateRef.current.isSubmitting ||
+        isTurnBusy(stateRef.current.turnStatus)) {
+        return;
+      }
+      await runTurnRequest(
+        (idempotencyKey, signal) => client.retryTurn(sessionId, turnId, { idempotencyKey, calendarProtocol: 2 }, { signal }),
+        { code: 'RETRY_FAILED', message: 'Retry failed' },
+      );
+    },
+    [client, runTurnRequest, voiceLease],
+  );
+
+  const isRevisionBlocked = () => !stateRef.current.activeSessionId || Boolean(voiceLease.current) ||
+    Boolean(stateRef.current.voiceInput) || stateRef.current.isStreaming || stateRef.current.isSubmitting ||
+    isTurnBusy(stateRef.current.turnStatus);
+
+  /** Regenerate the latest answer: a new attempt on the same user message. `answerId` is the answer it replaces. */
+  const regenerateTurn = useCallback(
+    async (turnId: string, answerId: string) => {
+      if (isRevisionBlocked()) return;
+      const sessionId = stateRef.current.activeSessionId!;
+      await runTurnRequest(
+        (idempotencyKey, signal) => client.regenerateTurn(sessionId, turnId, { idempotencyKey, calendarProtocol: 2 }, { signal }),
+        { code: 'REGENERATE_FAILED', message: 'Regenerate failed' },
+        () => dispatch({ type: 'REVISION_PENDING', payload: { supersedes: answerId } }),
+      );
+      dispatch({ type: 'REVISION_PENDING', payload: { supersedes: null } });
+    },
+    [client, dispatch, runTurnRequest, voiceLease],
+  );
+
+  /** Edit the latest user message: a new turn whose user message replaces `userMessageId`. */
+  const editTurn = useCallback(
+    async (turnId: string, userMessageId: string, content: string) => {
+      const text = content.trim();
+      if (!text || text.length > 32_000 || isRevisionBlocked()) return;
+      const sessionId = stateRef.current.activeSessionId!;
+      await runTurnRequest(
+        (idempotencyKey, signal) => client.editTurn(sessionId, turnId, { content: text, idempotencyKey, calendarProtocol: 2 }, { signal }),
+        { code: 'EDIT_FAILED', message: 'Edit failed' },
+        (idempotencyKey) => dispatch({ type: 'TURN_SUBMIT_START',
+          payload: { userContent: text, idempotencyKey, supersedes: userMessageId } }),
+        true,
+      );
+    },
+    [client, dispatch, runTurnRequest, voiceLease],
   );
 
   const setDraft = useCallback(
@@ -1314,6 +1364,8 @@ export function useChatActions(
       retrySave,
       cancelCurrentTurn,
       retryTurn,
+      regenerateTurn,
+      editTurn,
       skipTaskStep,
       setDraft,
       isVoiceInputLocked,
@@ -1336,6 +1388,8 @@ export function useChatActions(
       retrySave,
       cancelCurrentTurn,
       retryTurn,
+      regenerateTurn,
+      editTurn,
       skipTaskStep,
       setDraft,
       isVoiceInputLocked,

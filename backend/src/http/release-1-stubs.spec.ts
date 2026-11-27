@@ -15,7 +15,7 @@
  * ============================================================================
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SearchHttpService } from './search-http.service.js';
 import { RevisionHttpService } from './revision-http.service.js';
 import { FeedbackHttpService } from './feedback-http.service.js';
@@ -38,12 +38,21 @@ describe('release 1 stubs', () => {
     await expect(new SearchHttpService(wired).search({ q: 'hello' })).rejects.toMatchObject({ code: 'SEARCH_UNAVAILABLE' });
     await expect(new SearchHttpService(base).search({ q: 'hello' })).rejects.toMatchObject({ code: 'SEARCH_UNAVAILABLE' });
   });
-  it('edit and regenerate validate the body, then refuse', async () => {
+  it('edit and regenerate validate the body, then fail closed without a runtime revise', async () => {
     const s = new RevisionHttpService(base);
     await expect(s.edit('s', 't', { content: '' })).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
-    await expect(s.edit('s', 't', { content: 'hi', idempotencyKey: 'idem-key-1' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(s.edit('s', 't', { content: 'hi', idempotencyKey: 'idem-key-1' })).rejects.toMatchObject({ code: 'NOT_READY' });
     await expect(s.regenerate('s', 't', { idempotencyKey: 'idem-key-1', userId: 'x' })).rejects.toThrow();
-    await expect(s.regenerate('s', 't', { idempotencyKey: 'idem-key-1' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(s.regenerate('s', 't', { idempotencyKey: 'idem-key-1' })).rejects.toMatchObject({ code: 'NOT_READY' });
+  });
+  it('edit and regenerate hand a server-identity command to runtime.reviseTurn', async () => {
+    const reply = { sessionId: 's', turnId: 't2', attemptId: 'a2', userMessageId: 'u2', streamPath: '/api/sessions/s/turns/t2/stream', status: 'accepted' };
+    const reviseTurn = vi.fn(async () => reply);
+    const o = { ...base, runtime: { reviseTurn, memorySession: () => ({ userId: 'user_1', sessionId: 's', lifecycle: 'active' }) } } as unknown as ChatHttpOptions;
+    const s = new RevisionHttpService(o);
+    await s.edit('s', 't', { content: 'hi', idempotencyKey: 'idem-key-1' }).catch(() => undefined);
+    await s.regenerate('s', 't', { idempotencyKey: 'idem-key-2' }).catch(() => undefined);
+    expect(reviseTurn.mock.calls.map(([c]) => [c.kind, c.turnId, c.identity.userId])).toEqual([['edit', 't', 'user_1'], ['regenerate', 't', 'user_1']]);
   });
   it('feedback and export refuse instead of succeeding', async () => {
     const f = new FeedbackHttpService(wired);

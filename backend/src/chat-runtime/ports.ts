@@ -76,6 +76,13 @@ export type CalendarCompatibleTurnState = z.infer<typeof calendarCompatibleTurnS
 
 /** Local command widening: P1's contract has no creation-mode field yet. */
 export type SubmitTurnCommand = AgentSubmitTurn & { ephemeral?: boolean };
+/**
+ * Release 1 edit/regenerate: one command through one `revise` entry. `content` is the new
+ * text for an edit and absent for a regenerate. Identity is server-resolved, never from a body.
+ */
+export type ReviseTurnCommand = Omit<import('../contracts/runtime.js').RetryTurnCommand, 'turnId'> & {
+  kind: 'edit' | 'regenerate'; turnId: string; content?: string;
+};
 /** Off-path user memory has no storage dependency on the model hot path. */
 export type UserMemoryRuntime = {
   cache: Pick<UserMemoryService, 'cachedMemory' | 'cachedSnapshot'>;
@@ -170,6 +177,8 @@ export type ExecuteTurn = {
 };
 export type DrainResult = { drained: boolean; active: number; unresolvedWrites: number };
 export interface ChatRuntime extends AgentRuntime {
+  /** Edit or regenerate the latest turn; same 202 envelope and stream path as submit/retry. */
+  reviseTurn?(command: ReviseTurnCommand): Promise<import('../contracts/api.js').SubmitTurnResponse>;
   processEpoch?(): string | null;
   prepareSession?(userId: string, sessionId: string): Promise<void>;
   activeSessionTurn?(userId: string, sessionId: string): Promise<import('../contracts/api.js').ActiveSessionTurn | null>;

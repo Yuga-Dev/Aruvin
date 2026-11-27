@@ -17,7 +17,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { chatReducer, initialChatState } from './chat-reducer.ts';
+import { chatReducer, initialChatState, selectVisibleMessages, versionInfo } from './chat-reducer.ts';
 import type { ChatState } from './chat-types.ts';
 import type { VisibleMessage } from '../../../api/protocol.ts';
 
@@ -388,5 +388,43 @@ describe('chatReducer', () => {
     expect(chatReducer(loaded, { type: 'NEW_CHAT' }).canvasMessages).toEqual([]);
     expect(chatReducer(loaded, { type: 'SELECT_SESSION', payload: { sessionId: 'chat-2', title: 'Other' } })
       .canvasMessages).toEqual([]);
+  });
+});
+
+describe('edit and regenerate versions', () => {
+  const m = (messageId: string, role: 'user' | 'assistant', sequence: number, turnId: string, supersedes?: string): VisibleMessage => ({
+    messageId, turnId, eventId: `e_${messageId}`, sequence, role, content: messageId, createdAt: '2026-11-27T10:00:00.000Z',
+    completionStatus: role === 'user' ? 'accepted' : 'completed', truncated: false, ...(supersedes ? { supersedes } : {}),
+  });
+  const ids = (list: readonly VisibleMessage[]) => list.map((x) => x.messageId);
+
+  it('hides messages that a later message supersedes', () => {
+    const all = [m('u1', 'user', 0, 't1'), m('a1', 'assistant', 1, 't1'), m('a1b', 'assistant', 3, 't1', 'a1')];
+    expect(ids(selectVisibleMessages(all))).toEqual(['u1', 'a1b']);
+    const edited = [...all, m('u2', 'user', 4, 't2', 'u1'), m('a2', 'assistant', 5, 't2')];
+    expect(ids(selectVisibleMessages(edited))).toEqual(['u2', 'a2']);
+  });
+
+  it('exposes the version chain for a superseded message', () => {
+    const all = [m('a1', 'assistant', 1, 't1'), m('a1b', 'assistant', 3, 't1', 'a1'), m('a1c', 'assistant', 5, 't1', 'a1b')];
+    expect(versionInfo(all, 'a1b')).toEqual({ index: 2, total: 3, tipId: 'a1c', prevId: 'a1', nextId: 'a1c' });
+    expect(versionInfo([m('x', 'user', 0, 't1')], 'x')).toBeNull();
+    // Walking back to an older version shows it and hides the newest.
+    expect(ids(selectVisibleMessages(all, { a1c: 'a1' }))).toEqual(['a1']);
+    const walked = chatReducer(initialChatState, { type: 'REVISION_SELECT', payload: { tipId: 'a1c', messageId: 'a1b' } });
+    expect(ids(selectVisibleMessages(all, walked.revisionSelection))).toEqual(['a1b']);
+  });
+
+  it('walking an edit chain back shows the old user message with its own answer', () => {
+    const all = [m('u1', 'user', 0, 't1'), m('a1', 'assistant', 1, 't1'), m('u2', 'user', 4, 't2', 'u1'), m('a2', 'assistant', 5, 't2')];
+    expect(ids(selectVisibleMessages(all, { u2: 'u1' }))).toEqual(['u1', 'a1']);
+  });
+
+  it('older page load keeps hidden state consistent', () => {
+    const newest = [m('u1', 'user', 0, 't1'), m('a1b', 'assistant', 3, 't1', 'a1')];
+    expect(ids(selectVisibleMessages(newest))).toEqual(['u1', 'a1b']);
+    const withOlder = [m('a1', 'assistant', 1, 't1'), ...newest].sort((x, y) => x.sequence - y.sequence);
+    expect(ids(selectVisibleMessages(withOlder))).toEqual(['u1', 'a1b']);
+    expect(versionInfo(withOlder, 'a1b')?.total).toBe(2);
   });
 });

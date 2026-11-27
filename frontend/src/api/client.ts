@@ -29,6 +29,8 @@ import {
   API_ROUTES,
   assertNoClientOverrides,
   isCompactionCheckpointMeta,
+  isEditTurnRequest,
+  isRegenerateTurnRequest,
   isContextUsageMeta,
   isRetryTurnRequest,
   isSubmitTurnRequest,
@@ -476,12 +478,40 @@ export class ApiClient {
     throw notImplemented('Search');
   }
 
-  async editTurn(_sessionId: string, _turnId: string, _request: EditTurnRequest, _options?: { signal?: AbortSignal }): Promise<SubmitTurnResponse> {
-    throw notImplemented('Edit');
+  async editTurn(sessionId: string, turnId: string, request: EditTurnRequest, options?: { signal?: AbortSignal }): Promise<SubmitTurnResponse> {
+    assertNoClientOverrides(request);
+    if (!isBoundedClientId(sessionId) || !isBoundedClientId(turnId) || !isEditTurnRequest(request)) {
+      throw new ApiClientError('INVALID_REQUEST', 'Request does not match EditTurnRequest contract', 400, false);
+    }
+    return this.revise(API_ROUTES.editTurn(sessionId, turnId), request, options);
   }
 
-  async regenerateTurn(_sessionId: string, _turnId: string, _request: RegenerateTurnRequest, _options?: { signal?: AbortSignal }): Promise<SubmitTurnResponse> {
-    throw notImplemented('Regenerate');
+  async regenerateTurn(sessionId: string, turnId: string, request: RegenerateTurnRequest, options?: { signal?: AbortSignal }): Promise<SubmitTurnResponse> {
+    assertNoClientOverrides(request);
+    if (!isBoundedClientId(sessionId) || !isBoundedClientId(turnId) || !isRegenerateTurnRequest(request)) {
+      throw new ApiClientError('INVALID_REQUEST', 'Request does not match RegenerateTurnRequest contract', 400, false);
+    }
+    return this.revise(API_ROUTES.regenerateTurn(sessionId, turnId), request, options);
+  }
+
+  // ponytail: edit/regenerate do not persist ambiguous-delivery recovery the way retry does; an unknown outcome
+  // surfaces as an error and the next click uses a new key. Upgrade path: reuse the pendingRetry record.
+  private async revise(path: string, request: EditTurnRequest | RegenerateTurnRequest, options?: { signal?: AbortSignal }): Promise<SubmitTurnResponse> {
+    if (this.pendingSubmission) {
+      throw new ApiClientError('SUBMISSION_PENDING', 'An earlier submission has unknown delivery. Retry it or explicitly start a new attempt.', 0, false);
+    }
+    const body = request.expectedEpoch || !this.processEpoch ? request : { ...request, expectedEpoch: this.processEpoch };
+    const response = await this.request<SubmitTurnResponse>(path, {
+      method: 'POST',
+      headers: withClientTimeZoneHeader({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body),
+      signal: options?.signal,
+    });
+    if (!isSubmitTurnResponse(response)) {
+      throw new ApiClientError('INVALID_RESPONSE', 'The outcome could not be confirmed.', 0, false);
+    }
+    this.processEpoch = response.processEpoch ?? this.processEpoch;
+    return response;
   }
 
   async putFeedback(_sessionId: string, _messageId: string, _rating: FeedbackRating | null): Promise<FeedbackResponse> {

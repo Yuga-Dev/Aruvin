@@ -22,7 +22,8 @@ import { SpeechProse } from '../voice/agent/speech-prose.js';
 import type { CanvasArtifactProjection } from '../contracts/voice-wire.js';
 import type { DurableChatRuntime } from './durable-chat-runtime.js';
 import type { RetryTurnCommand, CancelTurnCommand } from '../contracts/runtime.js';
-import type { SubmitTurnCommand as PortSubmitTurnCommand } from './ports.js';
+import type { SubmitTurnCommand as PortSubmitTurnCommand, ReviseTurnCommand } from './ports.js';
+import { assertRevisable } from './history.js';
 import type { RuntimeConfigSnapshot } from '../contracts/config-runtime.js';
 import {
   defaultPersonalizationSettings,
@@ -483,7 +484,8 @@ export class MemoryText {
     this.user(userId);
     await this.hydrate(sessionId, this.snapshot());
   }
-  async submit(c: PortSubmitTurnCommand, retry?: { previous: Entry | AttemptRecord; input: MessageRecord }, live?: SubmitLiveTurn): Promise<ReturnType<typeof responseFor>> {
+  async submit(c: PortSubmitTurnCommand, retry?: { previous: Entry | AttemptRecord; input: MessageRecord }, live?: SubmitLiveTurn,
+    revise?: NonNullable<MemoryAcceptance['revise']>): Promise<ReturnType<typeof responseFor>> {
     const identity = this.runtime.identity(c.identity); this.runtime.ready();
     if (identity.userId !== this.ownerId) throw new AppError('NOT_FOUND', 'Chat not found.');
     const sessionId = sessionIdFor(c.identity.userId, c.sessionId, c.idempotencyKey);
@@ -499,6 +501,7 @@ export class MemoryText {
         ...(c.expectedEpoch ? { expectedEpoch: c.expectedEpoch } : {}),
         mode: live ? 'live' : 'text', voice: live?.voice ?? null, calendarReplyTo: c.calendarReplyTo ?? null, config,
         ...(ephemeral ? { ephemeral: true } : {}),
+        ...(revise ? { revise } : {}),
         ...(retry ? { retryOf: { turnId: retry.input.turnId, userMessageId: retry.input.messageId,
           inputEventId: retry.input.eventId, sequence: retry.input.sequence, createdAt: retry.input.createdAt,
           previousAttemptId: 'turn' in retry.previous ? retry.previous.turn.attemptId : retry.previous.attemptId } } : {}),
@@ -589,7 +592,9 @@ export class MemoryText {
       contextVersion: t.contextVersion, openRouterUser: t.userId,
       generationId: e.accounting?.generationId ?? this.foundation.result(t)?.accounting?.generationId ?? null,
       truncated: e.status === 'truncated', errorCode: e.error?.code ?? null,
-      causal: { userMessageId: t.userMessageId, previousAttemptId: t.retryOf?.previousAttemptId ?? null }, calendarReplyTo: t.calendarReplyTo };
+      causal: { userMessageId: t.userMessageId, previousAttemptId: t.retryOf?.previousAttemptId ?? null,
+        ...(t.revise ? { revision: { kind: t.revise.kind, ofTurnId: t.revise.ofTurnId,
+          ...(t.revise.ofAttemptId ? { ofAttemptId: t.revise.ofAttemptId } : {}) } } : {}) }, calendarReplyTo: t.calendarReplyTo };
   }
   status(userId: string, sessionId: string, turnId: string) {
     this.user(userId); const e = this.find(sessionId, turnId); if (!e) return null;
@@ -772,6 +777,79 @@ export class MemoryText {
       ...(c.expectedEpoch ? { expectedEpoch: c.expectedEpoch } : {}),
       ...(nextTimeZone ? { clientTimeZone: nextTimeZone } : {}),
       content: input.content }, { previous: prior, input });
+  }
+  /**
+   * Edit or regenerate the latest turn (Release 1). Records are never modified: a regenerate is a new
+   * attempt on the same user message whose answer supersedes the old one; an edit is a new turn whose
+   * user message supersedes the old one. Both go through submit(), so admission, one-active-attempt,
+   * idempotency and the single consolidated post-response write are the submit/retry ones. No database
+   * read happens beyond the hydrate that retry already does for a cold session.
+   */
+  async revise(c: ReviseTurnCommand) {
+    const identity = this.runtime.identity(c.identity);
+    if (identity.userId !== this.ownerId) throw new AppError('NOT_FOUND', 'Chat not found.');
+    this.evictCleanSessions(c.sessionId);
+    if (!this.owns(c.sessionId) || this.sessions.get(c.sessionId)?.stale) await this.hydrate(c.sessionId, this.snapshot());
+    const mismatch = () => new AppError('IDEMPOTENCY_PAYLOAD_MISMATCH', 'This request identity has different input.');
+    const same = (kind?: string, ofTurnId?: string, content?: string) => kind === c.kind && ofTurnId === c.turnId &&
+      (c.kind === 'regenerate' || content === c.content);
+    const duplicate = this.foundation.find(c.sessionId, c.idempotencyKey);
+    if (duplicate) {
+      if (!same(duplicate.revise?.kind, duplicate.revise?.ofTurnId, duplicate.content)) throw mismatch();
+      return { ...responseFor(this.attempt(this.entries.get(duplicate.attemptId)!)), processEpoch: duplicate.epoch };
+    }
+    const cold = this.sessions.get(c.sessionId)?.attempts ?? [];
+    const legacy = cold.find(a => a.idempotencyKey === c.idempotencyKey);
+    if (legacy) {
+      const rev = legacy.causal.revision;
+      if (!same(rev?.kind, rev?.ofTurnId, c.content) || (c.kind === 'edit' && legacy.payloadHash !== hashPayload(c.content ?? '')))
+        throw mismatch();
+      return responseFor(legacy);
+    }
+    if (!this.foundation.has(c.sessionId)) throw new AppError('NOT_FOUND', 'Chat not found.');
+    const history = this.foundation.history(c.sessionId);
+    const e = this.find(c.sessionId, c.turnId);
+    const turnAttempts = cold.filter(a => a.turnId === c.turnId);
+    const prior = e ?? [...turnAttempts].sort((a, b) => a.sequence - b.sequence).at(-1);
+    const input = history.filter(r => r.turnId === c.turnId && r.role === 'user' && r.visibility !== 'internal').at(-1);
+    if (!prior || !input) throw new AppError('NOT_FOUND', 'Turn not found.');
+    const assistants = history.filter(r => r.turnId === c.turnId && r.role === 'assistant');
+    const result = e ? this.foundation.result(e.turn) : null;
+    // A turn that used Calendar tools or answered a proposal would repeat or orphan an external effect.
+    const usesTools = Boolean(result?.calendar || result?.calendarMutation ||
+      assistants.some(r => r.calendarView) || (e ? e.turn.calendarReplyTo : 'calendarReplyTo' in prior && prior.calendarReplyTo));
+    const canvasOnly = hasCanvasContent(input) || (assistants.length > 0 &&
+      assistants.every(r => hasCanvasContent(r) && !r.content.trim()));
+    let chain = 1;
+    for (let r: MessageRecord | undefined = input; r?.supersedes && chain < 99; chain++)
+      r = history.find(x => x.messageId === r!.supersedes);
+    const cut = this.foundation.summary(c.sessionId)?.sourceRange.toSequence ?? -1;
+    const compacted = Math.max(cut, this.sessions.get(c.sessionId)?.session.compactionCheckpoint?.compactedThroughSequence ?? -1);
+    const attempts = new Set([...this.entries.values()].filter(x => x.turn.sessionId === c.sessionId && x.turn.turnId === c.turnId)
+      .map(x => x.turn.attemptId).concat(turnAttempts.map(a => a.attemptId))).size;
+    const snapshot = this.snapshot();
+    assertRevisable({ kind: c.kind, epochMatches: c.expectedEpoch === undefined || c.expectedEpoch === this.foundation.epoch,
+      targetTurnId: c.turnId, latestTurnId: history.at(-1)?.turnId ?? null, targetSequence: input.sequence,
+      compactedThroughSequence: compacted >= 0 ? compacted : null,
+      activeAttempt: this.activeTurn(identity.userId, c.sessionId) !== null || Boolean(this.runtime.work.get(identity.userId, c.sessionId)),
+      attemptsOnTurn: c.kind === 'edit' ? chain : attempts,
+      priorTerminal: MemoryText.TERMINAL_STATUSES.has(prior.status) && !(e && this.isUnsettledEntry(e)),
+      isLiveOrCanvasOnly: input.mode === 'live' || canvasOnly || usesTools,
+      originalContent: input.content, ...(c.content !== undefined ? { newContent: c.content } : {}),
+      validate: text => validateInput(text, snapshot.budgets) });
+    this.runtime.reservations.assertText(identity.userId, c.sessionId);
+    const zone = normalizeTimeZone(c.clientTimeZone);
+    const base = { identity: c.identity, sessionId: c.sessionId, idempotencyKey: c.idempotencyKey,
+      ...(c.expectedEpoch ? { expectedEpoch: c.expectedEpoch } : {}), ...(zone ? { clientTimeZone: zone } : {}) };
+    const ofAttemptId = 'turn' in prior ? prior.turn.attemptId : prior.attemptId;
+    if (c.kind === 'edit')
+      return this.submit({ ...base, content: c.content! }, undefined, undefined,
+        { kind: 'edit', ofTurnId: c.turnId, ofAttemptId, supersedesUser: input.messageId });
+    // Supersede the answer the transcript currently shows: the newest completed or truncated one.
+    const visible = assistants.filter(r => r.completionStatus === 'completed' || r.completionStatus === 'truncated')
+      .filter(r => !history.some(x => x.supersedes === r.messageId)).at(-1);
+    return this.submit({ ...base, content: input.content }, { previous: prior, input }, undefined,
+      { kind: 'regenerate', ofTurnId: c.turnId, ofAttemptId, ...(visible ? { supersedesAssistant: visible.messageId } : {}) });
   }
   private finish(e: Entry, content: string, status: MemoryTerminal['status'], error: AppError | null = null): void {
     const accounting = e.accounting ? { ...e.accounting, outcome: status } : undefined;

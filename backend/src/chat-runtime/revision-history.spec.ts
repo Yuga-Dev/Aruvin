@@ -22,17 +22,15 @@ import { DEFAULT_BUDGETS } from '../contracts/budgets.js';
 import { AppError } from '../platform/errors/app-error.js';
 import { buildReferenceManifest, selectReferences } from '../context/reference-selection.js';
 import { assets, record } from '../../test/context/fixtures.js';
-import { contextRecords, reviseRefusal, supersededIds, type ReviseFacts, type RevisableRecord } from './history.js';
+import { contextRecords, reviseRefusal, supersededIds, type ReviseFacts } from './history.js';
 
 const u1 = record({ turnId: 't1', messageId: 'u1', eventId: 'eu1', sequence: 0, role: 'user', content: 'Q1' });
 const a1 = record({ turnId: 't1', messageId: 'a1', eventId: 'ea1', sequence: 1, role: 'assistant', content: 'A1', completionStatus: 'completed', attemptId: 'att1' });
 // Regenerate of t1: new attempt, new assistant superseding a1.
-const a1b: RevisableRecord = { ...record({ turnId: 't1', messageId: 'a1b', eventId: 'ea1b', sequence: 3, role: 'assistant', content: 'A1b', completionStatus: 'completed', attemptId: 'att2' }), supersedes: 'a1' };
+const a1b = record({ turnId: 't1', messageId: 'a1b', eventId: 'ea1b', sequence: 3, role: 'assistant', content: 'A1b', completionStatus: 'completed', attemptId: 'att2', supersedes: 'a1' });
 // Edit of t1: new turn t2 whose user message supersedes u1.
-const u2: RevisableRecord = { ...record({ turnId: 't2', messageId: 'u2', eventId: 'eu2', sequence: 4, role: 'user', content: 'Q1 edited' }), supersedes: 'u1' };
+const u2 = record({ turnId: 't2', messageId: 'u2', eventId: 'eu2', sequence: 4, role: 'user', content: 'Q1 edited', supersedes: 'u1' });
 const a2 = record({ turnId: 't2', messageId: 'a2', eventId: 'ea2', sequence: 5, role: 'assistant', content: 'A2', completionStatus: 'completed', attemptId: 'att3' });
-// ponytail: contract strict schema lacks `supersedes` until Unit 0; strip it for the real builders. Remove in phase 2.
-const plain = (rs: readonly RevisableRecord[]) => rs.map(({ supersedes: _s, ...rest }) => rest);
 const ids = (r: readonly { messageId: string }[]) => r.map(x => x.messageId);
 const req = (turnId: string, newUserInput: string) => ({ userId: 'u1', sessionId: 's1', turnId, newUserInput,
   responseMode: 'text' as const, environment: { timeZone: 'Etc/UTC', currentDate: '2026-10-06', dayOfWeek: 'Tuesday' } });
@@ -42,21 +40,21 @@ describe('superseded records and model context', () => {
     const all = [u1, a1];
     const m = buildReferenceManifest('u1', 's1', 1, all, assets, DEFAULT_BUDGETS);
     expect(() => selectReferences(req('t1', 'Q1'), m, all, assets, DEFAULT_BUDGETS)).toThrow(AppError);
-    const clean = plain(contextRecords(all, 't1'));
+    const clean = contextRecords(all, 't1');
     const m2 = buildReferenceManifest('u1', 's1', 1, clean, assets, DEFAULT_BUDGETS);
     expect(selectReferences(req('t1', 'Q1'), m2, clean, assets, DEFAULT_BUDGETS)).toEqual([]);
     expect(ids(clean)).toEqual(['u1']);
   });
   it('next turn after a regenerate sees only the new answer, input exactly once', () => {
     const next = record({ turnId: 't3', messageId: 'u3', eventId: 'eu3', sequence: 6, role: 'user', content: 'Q3' });
-    const clean = plain(contextRecords([u1, a1, a1b, next], 't3'));
+    const clean = contextRecords([u1, a1, a1b, next], 't3');
     const m = buildReferenceManifest('u1', 's1', 2, clean, assets, DEFAULT_BUDGETS);
     expect(selectReferences(req('t3', 'Q3'), m, clean, assets, DEFAULT_BUDGETS).map(r => r.messageId)).toEqual(['u1', 'a1b']);
   });
   it('an edit hides the replaced turn: user message and every answer', () => {
     const all = [u1, a1, a1b, u2, a2];
     expect([...supersededIds(all)].sort()).toEqual(['a1', 'a1b', 'u1']);
-    const clean = plain(contextRecords(all, 't2'));
+    const clean = contextRecords(all, 't2');
     expect(ids(clean)).toEqual(['u2']);
     const m = buildReferenceManifest('u1', 's1', 3, clean, assets, DEFAULT_BUDGETS);
     expect(selectReferences(req('t2', 'Q1 edited'), m, clean, assets, DEFAULT_BUDGETS)).toEqual([]);
@@ -65,6 +63,10 @@ describe('superseded records and model context', () => {
     const all = Object.freeze([u1, a1, a1b, u2, a2].map(r => Object.freeze(r)));
     contextRecords(all, 't2');
     expect(ids(all)).toEqual(['u1', 'a1', 'a1b', 'u2', 'a2']);
+  });
+  it('a failed regenerate does not remove the earlier good answer from context', () => {
+    const failed = record({ turnId: 't1', messageId: 'a1f', eventId: 'ea1f', sequence: 3, role: 'assistant', content: '', completionStatus: 'failed', attemptId: 'att2', supersedes: 'a1' });
+    expect(ids(contextRecords([u1, a1, failed], 't9'))).toEqual(['u1', 'a1', 'a1f']);
   });
   it('records without supersedes are untouched (retry behaviour unchanged)', () => {
     expect(ids(contextRecords([u1, a1], 't2'))).toEqual(['u1', 'a1']);

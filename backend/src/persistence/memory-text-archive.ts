@@ -261,7 +261,9 @@ export class MemoryTextArchive {
         modelId: e.request.config.modelId, openRouterUser: e.userId, generationId: e.accounting?.generationId ?? null,
         truncated: e.status === 'truncated', errorCode: e.status === 'cancelled' ? 'CANCELLED'
           : e.status === 'interrupted' ? 'INTERRUPTED' : e.status === 'failed' ? 'PROVIDER_ERROR' : null,
-        causal: { userMessageId: e.input.messageId, previousAttemptId: e.request.retryOf?.previousAttemptId ?? null } });
+        causal: { userMessageId: e.input.messageId, previousAttemptId: e.request.retryOf?.previousAttemptId ?? null,
+          ...(e.request.revise ? { revision: { kind: e.request.revise.kind, ofTurnId: e.request.revise.ofTurnId,
+            ...(e.request.revise.ofAttemptId ? { ofAttemptId: e.request.revise.ofAttemptId } : {}) } } : {}) } });
       const marker = acceptanceSchema.parse({ schemaVersion: 1, kind: 'acceptance', ...scope,
         turnId: attempt.turnId, attemptId: attempt.attemptId, userMessageId: e.input.messageId, payloadHash: attempt.payloadHash });
       let input = e.input;

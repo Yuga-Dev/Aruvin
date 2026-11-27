@@ -87,7 +87,7 @@ import { ConfirmedStateCache, type ConfirmedSessionState } from './confirmed-sta
 import type { AssembledContext, ContextAssembler, ContextSourceSnapshot, EnvironmentContext, ResponseMode } from '../contracts/context.js';
 import type { ContextChatMessage } from '../contracts/context.js';
 import type { CalendarCompatibleTurnState, CalendarCompatibleEnvelope } from './ports.js';
-import { diagnose, type RuntimeDependencies, type ExecuteTurn, type SubmitLiveTurn, type AttemptStreamBudgets, type DiagnosticScope, type SubmitTurnCommand, type MemoryToolTurn } from './ports.js';
+import { diagnose, type RuntimeDependencies, type ExecuteTurn, type SubmitLiveTurn, type AttemptStreamBudgets, type DiagnosticScope, type SubmitTurnCommand, type MemoryToolTurn, type ReviseTurnCommand } from './ports.js';
 import { UserMemoryScheduler, type PassiveTurn } from './user-memory-scheduler.js';
 import { createTurnModelMode, dispatchStream, type TurnModeHandle, type TurnModelDispatch } from './turn-model-mode.js';
 import type { RuntimeConfigSnapshot } from '../contracts/config-runtime.js';
@@ -513,6 +513,32 @@ export class DurableChatRuntime {
             attemptId:attemptIdFor(identity.userId, s, body.idempotencyKey), databasePhase:'admission' as const };
           return this.d.diagnostics ? this.d.diagnostics.run(scope, () => this.acceptNewTurn(command, command.reservation)) : this.acceptNewTurn(command, command.reservation);
         });
+    } catch (error) { return Promise.reject(error); }
+  }
+  /**
+   * Edit or regenerate the latest turn. One `revise` entry (MemoryText.revise) serves both kinds; the
+   * durable-only fallback does not implement supersession yet, so it refuses instead of forking a path.
+   * ponytail: durable-only chats (calendar v1, history too large for memory) cannot edit or regenerate; the
+   * upgrade is a manifest rebase through checkBoundary plus a staged superseding record in acceptRetry.
+   */
+  reviseTurn(c: ReviseTurnCommand) {
+    try {
+      const identity = this.identity(c.identity); this.ready();
+      const command: ReviseTurnCommand = { ...c, clientTimeZone: normalizeTimeZone(c.clientTimeZone) };
+      if (command.expectedEpoch !== undefined && command.expectedEpoch !== this.processEpoch())
+        throw new AppError('INTERRUPTED', 'This request belongs to an earlier server session; its outcome is unknown.', false);
+      this.reservations.assertText(identity.userId, command.sessionId);
+      this.assertConversationAdmission(identity.userId, command.sessionId);
+      const memory = this.d.memoryFirst ? this.memoryFor(identity.userId, true) : null;
+      if (!memory || !(memory.hasRequest(command.sessionId, command.idempotencyKey) || memory.eligible()))
+        throw new AppError('NOT_READY', 'This chat cannot be edited or regenerated right now.', false);
+      return this.joinAcceptance(JSON.stringify([identity.userId, command.sessionId, command.idempotencyKey]),
+        hashPayload(JSON.stringify([command.kind, command.turnId, command.content ?? null])), () => memory.revise(command)
+          .catch(error => {
+            if (error instanceof DurableHistoryRequired)
+              throw new AppError('NOT_READY', 'This chat cannot be edited or regenerated right now.', false);
+            throw error;
+          }));
     } catch (error) { return Promise.reject(error); }
   }
   retryTurn(c: RetryTurnCommand) {

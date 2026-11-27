@@ -1,0 +1,7 @@
+.aurvin-message-editor { display: flex; flex-direction: column; gap: 8px; width: 100%; margin-top: 6px; }
+.aurvin-message-editor textarea { width: 100%; min-height: 72px; resize: vertical; font: inherit; color: inherit;
+  background: transparent; border: 1px solid currentColor; border-radius: 8px; padding: 8px 10px; }
+.aurvin-message-editor-row { display: flex; align-items: center; gap: 8px; }
+.aurvin-message-editor-count { margin-left: auto; font-size: 0.8em; opacity: 0.7; }
+.aurvin-message-editor-count[data-over='true'] { opacity: 1; color: var(--aurvin-danger, #b3261e); }
+.aurvin-version-nav { display: inline-flex; align-items: center; gap: 4px; font-size: 0.85em; }
