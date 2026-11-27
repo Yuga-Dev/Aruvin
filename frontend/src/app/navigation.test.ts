@@ -29,9 +29,9 @@ describe('primary navigation', () => {
     expect(Object.values(FEATURE_FLAGS).every((on) => on === false)).toBe(true);
   });
 
-  it('hides a flagged area whose destination is not built, even when its flag is on', () => {
+  it('hides flagged areas whose destination is not built, even when their flags are on (only Memory is built)', () => {
     const allOn = Object.fromEntries(Object.keys(FEATURE_FLAGS).map((k) => [k, true])) as Record<keyof typeof FEATURE_FLAGS, boolean>;
-    expect(visibleNavItems(allOn).map((item) => item.id)).toEqual(['integrations', 'settings']);
+    expect(visibleNavItems(allOn).map((item) => item.id)).toEqual(['memory', 'integrations', 'settings']);
   });
 
   it('shows a flagged area once it has a destination and its flag is on', () => {

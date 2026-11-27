@@ -23,7 +23,7 @@ import type { AuthUser } from '../api/auth-protocol.ts';
 import { FEATURE_FLAGS, type FeatureFlag } from './feature-flags.ts';
 
 /** Destinations the current shell can actually open. */
-export type NavDestination = 'integrations' | 'settings' | 'unavailable';
+export type NavDestination = 'integrations' | 'settings' | 'memory' | 'unavailable';
 
 export type NavItem = {
   id: string;
@@ -37,7 +37,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'home', label: 'Home', flag: 'home', destination: 'unavailable' },
   { id: 'projects', label: 'Projects', flag: 'projects', destination: 'unavailable' },
   { id: 'agents', label: 'Agents', flag: 'agents', destination: 'unavailable' },
-  { id: 'memory', label: 'Memory', flag: 'memory', destination: 'unavailable' },
+  { id: 'memory', label: 'Memory', flag: 'memory', destination: 'memory' },
   { id: 'workspace', label: 'Workspace', flag: 'workspace', destination: 'unavailable' },
   { id: 'automations', label: 'Automations', flag: 'automations', destination: 'unavailable' },
   { id: 'integrations', label: 'Integrations', destination: 'integrations' },
@@ -56,10 +56,10 @@ export function visibleNavItems(
  * Members ('user' role) only see Plugins in Manage Aurvin, so Settings would
  * duplicate Integrations for them. */
 export function shellNavItems(
-  handlers: { onManageAurvin?: () => void; onOpenIntegrations?: () => void },
+  handlers: { onManageAurvin?: () => void; onOpenIntegrations?: () => void; onOpenMemory?: () => void },
   role: AuthUser['role'] | undefined,
 ): Array<NavItem & { onSelect: () => void }> {
-  const byDestination = { integrations: handlers.onOpenIntegrations, settings: handlers.onManageAurvin };
+  const byDestination = { integrations: handlers.onOpenIntegrations, settings: handlers.onManageAurvin, memory: handlers.onOpenMemory };
   return visibleNavItems().flatMap((item) => {
     if (item.destination === 'settings' && role === 'user') return [];
     const onSelect = item.destination === 'unavailable' ? undefined : byDestination[item.destination];
