@@ -37,6 +37,10 @@ const messages: Record<AppErrorCode, string> = {
   PERSISTENCE_ERROR: 'The chat save could not be confirmed. Check its status.',
   CONFIGURATION_ERROR: 'Chat is unavailable.', NOT_READY: 'Chat is not ready. Try again shortly.',
   UNSUPPORTED_TOPOLOGY: 'Chat is unavailable.',
+  REVISION_TOO_OLD: 'This message is part of a summarised earlier conversation and cannot be changed.',
+  REVISION_NOT_LATEST: 'Only the latest message can be edited or regenerated.',
+  MESSAGE_NOT_SAVED: 'This message is still being saved. Try again shortly.',
+  SEARCH_UNAVAILABLE: 'Search is unavailable. Try again.',
 };
 export function errorBody(code: AppErrorCode, retryable = isRetryable(code)): ClientErrorBody {
   return { code, message: messages[code], retryable: !isNeverRetry(code) && retryable };

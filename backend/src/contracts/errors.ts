@@ -42,6 +42,10 @@ export const APP_ERROR_CODES = [
   'CONFIGURATION_ERROR',
   'NOT_READY',
   'UNSUPPORTED_TOPOLOGY',
+  'REVISION_TOO_OLD',
+  'REVISION_NOT_LATEST',
+  'MESSAGE_NOT_SAVED',
+  'SEARCH_UNAVAILABLE',
 ] as const;
 
 export const appErrorCodeSchema = z.enum(APP_ERROR_CODES);
@@ -70,6 +74,10 @@ export const ERROR_HTTP_STATUS: Record<AppErrorCode, number> = {
   CONFIGURATION_ERROR: 500,
   NOT_READY: 503,
   UNSUPPORTED_TOPOLOGY: 500,
+  REVISION_TOO_OLD: 409,
+  REVISION_NOT_LATEST: 409,
+  MESSAGE_NOT_SAVED: 409,
+  SEARCH_UNAVAILABLE: 503,
 };
 
 export const RETRYABLE_CODES: ReadonlySet<AppErrorCode> = new Set([
@@ -78,6 +86,8 @@ export const RETRYABLE_CODES: ReadonlySet<AppErrorCode> = new Set([
   'PERSISTENCE_ERROR',
   'RATE_LIMITED',
   'NOT_READY',
+  'MESSAGE_NOT_SAVED',
+  'SEARCH_UNAVAILABLE',
 ]);
 
 export const NEVER_RETRY_CODES: ReadonlySet<AppErrorCode> = new Set([
@@ -93,6 +103,8 @@ export const NEVER_RETRY_CODES: ReadonlySet<AppErrorCode> = new Set([
   'CONFIGURATION_ERROR',
   'UNSUPPORTED_TOPOLOGY',
   'IDEMPOTENCY_PAYLOAD_MISMATCH',
+  'REVISION_TOO_OLD',
+  'REVISION_NOT_LATEST',
 ]);
 
 export function isRetryable(code: AppErrorCode): boolean {

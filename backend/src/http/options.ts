@@ -24,6 +24,13 @@ import type { ServerIdentityResolver } from '../platform/identity/server-identit
 import type { RequestEnvironmentStore } from '../platform/environment/request-environment-store.js';
 import type { CurrentConfigPort } from '../contracts/config-runtime.js';
 import type { AuthPrincipal } from '../contracts/auth.js';
+import type { FeedbackRating, FeedbackResponse, SearchSessionsQuery, SearchSessionsResponse } from '../contracts/api.js';
+
+/** Release 1 ports; units A and C supply real implementations through app.service.ts. */
+export type SearchPort = { search(userId: string, query: SearchSessionsQuery): Promise<SearchSessionsResponse> };
+export type FeedbackPort = {
+  put(userId: string, sessionId: string, messageId: string, rating: FeedbackRating | null): Promise<FeedbackResponse>;
+};
 export type ChatHttpOptions = {
   runtime: ChatRuntime;
   sessions: SessionRepository;
@@ -36,4 +43,6 @@ export type ChatHttpOptions = {
   currentConfig?: CurrentConfigPort;
   /** Off-turn control-plane web preparation for selected history only. */
   prepareWeb?: (userId: string) => Promise<void>;
+  search?: SearchPort;
+  feedback?: FeedbackPort;
 };
