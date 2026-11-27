@@ -3211,3 +3211,26 @@
 @keyframes aurvin-task-pulse {
   50% { opacity: 0.35; }
 }
+
+/* Canvas data table + Calendar day/week grid (Release 2) */
+.aurvin-canvas-table-tools { display: flex; gap: .75rem; align-items: center; margin-bottom: .75rem; }
+.aurvin-canvas-table-tools input { flex: 1; min-width: 0; padding: .5rem .75rem; border-radius: .5rem; border: 1px solid var(--aurvin-border, currentColor);
+  background: var(--aurvin-surface-elevated); color: inherit; font: inherit; }
+.aurvin-canvas-table-scroll { overflow: auto; max-height: 100%; border-radius: .5rem; }
+.aurvin-canvas-table table { border-collapse: collapse; width: 100%; font-size: .875rem; }
+.aurvin-canvas-table caption { text-align: left; font-weight: 600; padding-bottom: .5rem; }
+.aurvin-canvas-table th, .aurvin-canvas-table td { padding: .5rem .75rem; text-align: left; border-bottom: 1px solid var(--aurvin-border, rgba(127,127,127,.3)); overflow-wrap: anywhere; }
+.aurvin-canvas-table td.is-numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.aurvin-canvas-table th { position: sticky; top: 0; background: var(--aurvin-surface-elevated); }
+.aurvin-canvas-table th button { all: unset; cursor: pointer; font-weight: 600; }
+.aurvin-canvas-table th button:focus-visible, .aurvin-canvas-table-tools input:focus-visible,
+.aurvin-canvas-table-scroll:focus-visible, .aurvin-calendar-grid-nav button:focus-visible { outline: 2px solid var(--aurvin-primary, currentColor); outline-offset: 2px; }
+.aurvin-calendar-grid-nav { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-block: .75rem; }
+.aurvin-calendar-grid-nav button { padding: .375rem .75rem; border-radius: .5rem; border: 1px solid var(--aurvin-border, currentColor); background: none; color: inherit; font: inherit; cursor: pointer; }
+.aurvin-calendar-grid-nav button[aria-pressed="true"] { background: var(--aurvin-surface-elevated); font-weight: 600; }
+.aurvin-calendar-grid-days { display: grid; gap: .75rem; }
+.aurvin-calendar-grid-days.is-week { grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }
+.aurvin-calendar-grid-day { padding: .75rem; border-radius: .75rem; background: var(--aurvin-surface-elevated); min-width: 0; }
+.aurvin-calendar-grid-day h3 { margin: 0 0 .5rem; font-size: .9rem; }
+.aurvin-calendar-grid-day ul { list-style: none; padding: 0; margin: 0; }
+.aurvin-calendar-grid-day li { margin-bottom: .5rem; overflow-wrap: anywhere; font-size: .85rem; }

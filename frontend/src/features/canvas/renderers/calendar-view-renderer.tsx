@@ -25,7 +25,9 @@ import type {CalendarConfirmPayload} from '../../../api/voice-protocol.ts';
 import {describeCalendarProgress,describeOperationState,describeCalendarRetryAction,
   resolveReceiptCalendarLabel,resolveSafeReceiptLink} from '../../plugins/google-calendar/CalendarTurnRegion.tsx';
 import type {CalendarWorkspace} from '../calendar-workspace.ts';
+import {FEATURE_FLAGS} from '../../../app/feature-flags.ts';
 import {CalendarAgendaView,calendarInterval} from './calendar-agenda-view.tsx';
+import {CalendarGridView} from './calendar-grid-view.tsx';
 type Proposal=Extract<CalendarView,{kind:'proposal'}>;
 type Answer=CalendarConfirmPayload['answer'];
 const NOTICE_LIMITATIONS: Record<string, string> = Object.create(null);
@@ -80,8 +82,8 @@ function expiryDeadlines(view:CalendarView|null):number[] {
   if (view.kind === 'outcome' && view.receipt?.expiresAt) deadlines.push(view.receipt.expiresAt);
   return deadlines.map(Date.parse).filter(Number.isFinite);
 }
-export function CalendarViewRenderer({view,workspace,nowMs:testNow,disabled=false,onAnswer}:{
-  view:CalendarView|null;workspace?:CalendarWorkspace;nowMs?:number;disabled?:boolean;onAnswer?:(answer:Answer)=>void}) {
+export function CalendarViewRenderer({view,workspace,nowMs:testNow,disabled=false,onAnswer,grid=FEATURE_FLAGS.canvasCalendarGrid}:{
+  view:CalendarView|null;workspace?:CalendarWorkspace;nowMs?:number;disabled?:boolean;onAnswer?:(answer:Answer)=>void;grid?:boolean}) {
   const [clock,setClock]=useState(()=>Date.now());const nowMs=testNow ?? Math.max(clock,Date.now());
   useEffect(()=>{
     if (testNow !== undefined) return;
@@ -92,7 +94,7 @@ export function CalendarViewRenderer({view,workspace,nowMs:testNow,disabled=fals
   },[view,clock,testNow]);
   const progress=workspace?.phase;
   let body:ReactNode=null;
-  if (view?.kind === 'agenda') body=<CalendarAgendaView view={view} nowMs={nowMs}/>;
+  if (view?.kind === 'agenda') body=grid ? <CalendarGridView view={view} nowMs={nowMs}/> : <CalendarAgendaView view={view} nowMs={nowMs}/>;
   else if (view?.kind === 'proposal') body=<CalendarProposalReviewCard view={view} nowMs={nowMs}
     interactive={workspace?.interactive} disabled={disabled || workspace?.pending} onAnswer={onAnswer}/>;
   else if (view?.kind === 'outcome') {
