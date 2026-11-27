@@ -83,12 +83,14 @@ export type SidebarProps = {
   onManageAurvin?: () => void;
   /** Opens Manage Aurvin → Plugins (Integrations). */
   onOpenIntegrations?: () => void;
+  /** Opens Manage Aurvin → Memory (Release 5, flagged). */
+  onOpenMemory?: () => void;
   onOpenCommandPalette?: () => void;
   user?: AuthUser | null;
   onSignOut?: () => void;
 };
 
-export function Sidebar({ onCollapse, onNewChat, onManageAurvin, onOpenIntegrations, onOpenCommandPalette, user, onSignOut }: SidebarProps) {
+export function Sidebar({ onCollapse, onNewChat, onManageAurvin, onOpenIntegrations, onOpenMemory, onOpenCommandPalette, user, onSignOut }: SidebarProps) {
   const { state, actions, dispatch, client } = useChat();
   const selectedTurnBusy =
     state.isStreaming ||
@@ -97,7 +99,7 @@ export function Sidebar({ onCollapse, onNewChat, onManageAurvin, onOpenIntegrati
     state.turnStatus === 'generating' ||
     state.turnStatus === 'finalizing';
   return <SidebarContent onCollapse={onCollapse} onNewChat={onNewChat} onManageAurvin={onManageAurvin}
-    onOpenIntegrations={onOpenIntegrations} onOpenCommandPalette={onOpenCommandPalette}
+    onOpenIntegrations={onOpenIntegrations} onOpenMemory={onOpenMemory} onOpenCommandPalette={onOpenCommandPalette}
     user={user} onSignOut={onSignOut}
     actions={actions} dispatch={dispatch} client={client} sessions={state.sessions}
     sidebarOpen={state.sidebarOpen} sessionsError={state.sessionsError}
@@ -107,7 +109,7 @@ export function Sidebar({ onCollapse, onNewChat, onManageAurvin, onOpenIntegrati
 }
 
 const SidebarContent = memo(function SidebarContent({ onCollapse, onNewChat, onManageAurvin,
-  onOpenIntegrations, onOpenCommandPalette, user, onSignOut,
+  onOpenIntegrations, onOpenMemory, onOpenCommandPalette, user, onSignOut,
   actions, dispatch, client, ...state }: SidebarProps &
   Pick<ReturnType<typeof useChat>, 'actions' | 'dispatch' | 'client'> &
   Pick<ChatState, 'sessions' | 'sidebarOpen' | 'sessionsError' | 'activeSessionId' |
@@ -120,7 +122,7 @@ const SidebarContent = memo(function SidebarContent({ onCollapse, onNewChat, onM
   const [sessionToDelete, setSessionToDelete] = useState<SessionSummary | null>(null);
   const [titleInput, setTitleInput] = useState('');
   const groups = groupSessions(state.sessions, now);
-  const navItems = shellNavItems({ onManageAurvin, onOpenIntegrations }, user?.role);
+  const navItems = shellNavItems({ onManageAurvin, onOpenIntegrations, onOpenMemory }, user?.role);
 
   const updateSession = async (session: SessionSummary, changes: { title?: string; pinned?: boolean }) => {
     setBusy(session.sessionId);

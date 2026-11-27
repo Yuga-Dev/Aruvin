@@ -478,7 +478,7 @@ export function ChatView(props: {
   const paletteItems = useMemo<PaletteItem[]>(() => {
     if (!paletteOpen) return [];
     const navItems = shellNavItems(
-      { onManageAurvin: props.onManageAurvin, onOpenIntegrations: props.onOpenCalendarSetup },
+      { onManageAurvin: props.onManageAurvin, onOpenIntegrations: props.onOpenCalendarSetup, onOpenMemory: props.onOpenMemorySettings },
       props.user?.role,
     );
     const items: PaletteItem[] = [
@@ -500,7 +500,7 @@ export function ChatView(props: {
       })) : []),
     ];
     return items;
-  }, [paletteOpen, startNewChat, props.onManageAurvin, props.onOpenCalendarSetup, props.user?.role,
+  }, [paletteOpen, startNewChat, props.onManageAurvin, props.onOpenCalendarSetup, props.onOpenMemorySettings, props.user?.role,
     state.sessions, actions, theme]);
 
   const renderedCanvas = showCanvasPanel
@@ -578,6 +578,7 @@ export function ChatView(props: {
         onNewChat={startNewChat}
         onManageAurvin={props.onManageAurvin}
         onOpenIntegrations={props.onOpenCalendarSetup}
+        onOpenMemory={props.onOpenMemorySettings}
         onOpenCommandPalette={openCommandPalette}
         user={props.user}
         onSignOut={props.onSignOut}

@@ -1,0 +1,17 @@
+/* Memory view additions; base classes come from personalization.css. */
+.aurvin-memory-section-list { list-style: none; padding: 0; }
+.aurvin-memory-section-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.aurvin-memory-section-head .aurvin-memory-section-label { margin: 0; }
+.aurvin-memory-section-count { font-size: 12px; color: var(--aurvin-text-secondary); }
+.aurvin-memory-section-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.aurvin-memory-section-text.is-empty { color: var(--aurvin-text-secondary); font-style: italic; }
+.aurvin-memory-textarea { width: 100%; resize: vertical; font: inherit; }
+.aurvin-memory-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.aurvin-memory-inline-confirm { margin-top: 8px; padding: 10px 12px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--aurvin-danger) 40%, transparent); font-size: 13px; }
+.aurvin-memory-inline-confirm p { margin: 0; }
+.aurvin-personalization .aurvin-personalization-btn.is-danger { color: var(--aurvin-danger); }
+.aurvin-memory-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.aurvin-memory-history { display: flex; flex-direction: column; gap: 8px; }
+.aurvin-memory-history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.aurvin-memory-history-item { display: flex; flex-direction: column; font-size: 13px; }
+.aurvin-memory-history-meta, .aurvin-memory-history-note, .aurvin-memory-footnote { font-size: 12px; color: var(--aurvin-text-secondary); margin: 0; }

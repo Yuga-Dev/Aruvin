@@ -55,6 +55,9 @@ export const USER_MEMORY_ROUTES = {
   enabled: '/personalization/memory/enabled',
   edit: '/personalization/memory/edit',
   clear: '/personalization/memory/clear',
+  // Release 5 (M1 contract, plan 3.2). The section key is validated by the client before use.
+  section: (key: UserMemorySectionKey) => `/personalization/memory/sections/${key}`,
+  history: '/personalization/memory/history',
 } as const;
 
 export const USER_MEMORY_ERROR_CODES = [
@@ -259,4 +262,73 @@ export function isUserMemoryErrorBody(value: unknown): value is UserMemoryErrorB
   if (typeof err.message !== 'string') return false;
   if (typeof err.retryable !== 'boolean') return false;
   return err.currentRevision === null || isSafeRevision(err.currentRevision);
+}
+
+// ---- Release 5 section edit and history (plan 3.2); mirrors the M1 contract. ----
+
+export const USER_MEMORY_HISTORY_MAX_LIMIT = 50;
+
+export type UserMemorySectionRequest = {
+  protocolVersion: 1;
+  expectedRevision: number;
+  requestId: string;
+  /** Empty text clears the section. */
+  text: string;
+};
+
+export const MEMORY_AUDIT_ACTIONS = [
+  'edit-section',
+  'clear-section',
+  'clear-all',
+  'enable',
+  'disable',
+  'instruction',
+  'tool',
+  'passive',
+] as const;
+export type MemoryAuditAction = (typeof MEMORY_AUDIT_ACTIONS)[number];
+export type MemoryAuditSource = 'user-ui' | 'composer' | 'tool' | 'passive';
+
+/** Counts and names only; the server never returns memory text here (D2). */
+export type MemoryAuditView = {
+  memoryRevision: number;
+  at: string;
+  action: MemoryAuditAction;
+  source: MemoryAuditSource;
+  sections: UserMemorySectionKey[];
+  charsBefore: number;
+  charsAfter: number;
+  origin?: { sessionId: string; turnId: string };
+};
+
+export type MemoryHistoryResponse = { items: MemoryAuditView[]; nextCursor: string | null };
+
+const AUDIT_SOURCES = new Set(['user-ui', 'composer', 'tool', 'passive']);
+
+function isAuditView(value: unknown): value is MemoryAuditView {
+  if (!isRecord(value)) return false;
+  const origin = value.origin;
+  return (
+    isSafeRevision(value.memoryRevision) &&
+    isIsoTimestamp(value.at) &&
+    (MEMORY_AUDIT_ACTIONS as readonly string[]).includes(value.action as string) &&
+    AUDIT_SOURCES.has(value.source as string) &&
+    Array.isArray(value.sections) &&
+    value.sections.length <= USER_MEMORY_SECTION_KEYS.length &&
+    value.sections.every(k => (USER_MEMORY_SECTION_KEYS as readonly unknown[]).includes(k)) &&
+    isSafeRevision(value.charsBefore) &&
+    isSafeRevision(value.charsAfter) &&
+    (origin === undefined ||
+      (isRecord(origin) && typeof origin.sessionId === 'string' && typeof origin.turnId === 'string'))
+  );
+}
+
+export function isMemoryHistoryResponse(value: unknown): value is MemoryHistoryResponse {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.items) &&
+    value.items.length <= USER_MEMORY_HISTORY_MAX_LIMIT &&
+    value.items.every(isAuditView) &&
+    (value.nextCursor === null || (typeof value.nextCursor === 'string' && value.nextCursor.length <= 512))
+  );
 }
