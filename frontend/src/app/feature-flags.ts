@@ -25,6 +25,9 @@ export const FEATURE_FLAGS = {
   memory: false, // Release 5
   workspace: false, // Release 2
   automations: false, // Release 8
+  canvasMoreDiagrams: false, // Release 2: mindmap, ER and class diagrams in Canvas
+  canvasCalendarGrid: false, // Release 2: Day/Week toggle on Calendar agenda
+  canvasTables: false, // Release 2: ```table blocks as sortable/filterable Canvas tables
   taskMode: false, // Release 3: Task toggle in the composer (docs/task-mode-and-flows); on after release approval
 } as const;
 

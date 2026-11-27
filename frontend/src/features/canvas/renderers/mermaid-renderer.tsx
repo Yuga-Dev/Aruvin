@@ -1168,11 +1168,14 @@ function renderSequenceSvg(model: MermaidSequenceModel) {
 export function MermaidRenderer({
   source,
   title,
+  moreDiagrams,
 }: {
   source: string;
   title?: string;
+  /** Test override; defaults to the canvasMoreDiagrams flag. */
+  moreDiagrams?: boolean;
 }) {
-  const parsed = parseMermaidSource(source, title);
+  const parsed = parseMermaidSource(source, title, moreDiagrams);
 
   if (parsed.kind === 'chart') {
     return <ChartRenderer source={source} title={title} model={parsed.chart} />;
