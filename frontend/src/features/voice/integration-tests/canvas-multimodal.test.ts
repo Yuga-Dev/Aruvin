@@ -36,7 +36,10 @@ import { chatReducer, initialChatState } from '../../chat/state/chat-reducer.ts'
 import { collectSessionCanvasArtifacts, mergeSessionCanvasArtifacts, projectionToCanvasArtifact,
   forcedChartKindFromSubType, CANVAS_TRANSITION_MS, handleLiveCanvasShortcut, prefersReducedCanvasMotion,
   restoreCanvasCloseFocus } from '../../canvas/canvas-artifacts.ts';
-import { CanvasPanel, ChartRenderer, MermaidRenderer, SvgRenderer } from '../../canvas/index.ts';
+import { CanvasPanel } from '../../canvas/CanvasPanel.tsx';
+import { ChartRenderer } from '../../canvas/renderers/chart-renderer.tsx';
+import { MermaidRenderer } from '../../canvas/renderers/mermaid-renderer.tsx';
+import { SvgRenderer } from '../../canvas/renderers/svg-renderer.tsx';
 import { LiveVoicePanel } from '../live/LiveVoicePanel.tsx';
 import { initialLiveVoice } from '../state/live-voice-reducer.ts';
 import { groupVoiceMessages } from '../../../components/group-voice-messages.ts';
