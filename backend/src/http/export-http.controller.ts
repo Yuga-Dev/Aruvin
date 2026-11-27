@@ -5,17 +5,18 @@
  * ============================================================================
  *
  * PURPOSE:
- *    Expose GET /sessions/:id/export.md (Release 1 unit 0 stub).
+ *    Expose GET /sessions/:id/export.md as an attachment.
  *
  * ROLE IN PROJECT:
- *    Thin controller; unit C sets Content-Type and Content-Disposition.
+ *    Thin controller; sets Content-Type and Content-Disposition (slug-only filename).
  *
  * KEY COMPONENTS:
  *    - ExportHttpController: one GET route.
  * ============================================================================
  */
 
-import { Controller, Get, Inject, Param, Query, UseFilters } from '@nestjs/common';
+import { Controller, Get, Inject, Param, Query, Res, UseFilters } from '@nestjs/common';
+import type { Response } from 'express';
 import { ChatHttpFilter } from './chat-http.filter.js';
 import { ExportHttpService } from './export-http.service.js';
 import { noQuery, pathId } from './validation.js';
@@ -25,7 +26,12 @@ import { noQuery, pathId } from './validation.js';
 export class ExportHttpController {
   constructor(@Inject(ExportHttpService) private service: ExportHttpService) {}
   @Get(':sessionId/export.md')
-  export(@Param('sessionId') s: string, @Query() q: unknown) {
-    noQuery(q); return this.service.export(pathId(s));
+  async export(@Param('sessionId') s: string, @Query() q: unknown, @Res({ passthrough: true }) res: Response) {
+    noQuery(q);
+    const { markdown, filename } = await this.service.export(pathId(s));
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return markdown;
   }
 }

@@ -19,7 +19,6 @@ import { describe, expect, it } from 'vitest';
 import { SearchHttpService } from './search-http.service.js';
 import { RevisionHttpService } from './revision-http.service.js';
 import { FeedbackHttpService } from './feedback-http.service.js';
-import { ExportHttpService } from './export-http.service.js';
 import { NOOP_FEATURE_PORTS } from './noop-ports.js';
 import type { ChatHttpOptions } from './options.js';
 
@@ -45,10 +44,9 @@ describe('release 1 stubs', () => {
     await expect(s.regenerate('s', 't', { idempotencyKey: 'idem-key-1', userId: 'x' })).rejects.toThrow();
     await expect(s.regenerate('s', 't', { idempotencyKey: 'idem-key-1' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
-  it('feedback and export refuse instead of succeeding', async () => {
+  it('feedback refuses instead of succeeding', async () => {
     const f = new FeedbackHttpService(wired);
     await expect(f.put('s', 'm', { rating: 'sideways' })).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
     await expect(f.put('s', 'm', { rating: 'up' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
-    await expect(new ExportHttpService(base).export('s')).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 });

@@ -374,7 +374,10 @@ export const WEB_SEARCH_INDEXES: AppIndex[] = [
 
 // Release 1 scaffolding: unit A (search) and unit C (feedback) add entries; empty until then.
 export const SEARCH_INDEXES: AppIndex[] = [];
-export const FEEDBACK_INDEXES: AppIndex[] = [];
+export const FEEDBACK_INDEXES: AppIndex[] = [
+  { collection: 'metadata', keys: { userId: 1, sessionId: 1, kind: 1, messageId: 1 },
+    options: { name: 'scope_kind_message' } },
+];
 
 // Cross-user native retention scan; not part of the existing intersection index set.
 const EPHEMERAL_SESSION_SWEEP_INDEX: AppIndex = {

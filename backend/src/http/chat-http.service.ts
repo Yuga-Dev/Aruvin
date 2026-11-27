@@ -65,6 +65,8 @@ export class ChatHttpService {
     }
     this.o.runtime.assertSessionMutation?.(u, s);
     await this.o.sessions.delete(u, s);
+    // Soft delete keeps the archive for retention; ratings are not needed.
+    try { await this.o.feedback?.removeSession?.(u, s); } catch { /* best effort */ }
   }
   async messages(id: string, query: unknown) {
     const identity = this.o.identity.resolve();
@@ -78,7 +80,7 @@ export class ChatHttpService {
     try { await this.o.prepareWeb?.(userId); }
     catch { /* Web preparation is best-effort; chat remains memory-first. */ }
     const memory = this.o.runtime.memoryMessages?.(userId, id, page);
-    if (memory) return listMessagesResponseSchema.parse(memory);
+    if (memory) return listMessagesResponseSchema.parse(await this.withFeedback(userId, id, memory));
     const session = await this.o.sessions.get(userId, id);
     if (!session || session.userId !== userId || session.sessionId !== id || session.lifecycle !== 'active')
       throw new AppError('NOT_FOUND', 'Chat not found.');
@@ -91,7 +93,7 @@ export class ChatHttpService {
           return this.o.messages.listPublished(userId, id, { cursor, limit }, publishedSequence);
         })()
       : this.o.messages.list(userId, id, { cursor, limit });
-    const listed = await listPage(page.cursor, page.limit);
+    const listed = await this.withFeedback(userId, id, await listPage(page.cursor, page.limit));
     // One bounded older walk only on the initial transcript page so compacted
     // Canvas artifacts remain available without changing routine poll counts.
     let canvasMessages: VisibleMessage[] | undefined;
@@ -132,6 +134,15 @@ export class ChatHttpService {
       ...(checkpoint ? { compaction: checkpoint } : {}),
       ...(extra?.contextUsage ? { contextUsage: extra.contextUsage } : {}),
     });
+  }
+  /** Caller's own ratings for this page; a failing read never fails the list. */
+  private async withFeedback<T extends { items: VisibleMessage[] }>(userId: string, id: string, list: T): Promise<T> {
+    const ids = list.items.filter(m => m.role === 'assistant').map(m => m.messageId);
+    if (!this.o.feedback?.ratings || !ids.length) return list;
+    try {
+      const ratings = await this.o.feedback.ratings(userId, id, ids);
+      return { ...list, items: list.items.map(m => (ratings.has(m.messageId) ? { ...m, feedback: ratings.get(m.messageId)! } : m)) };
+    } catch { return list; }
   }
   async submit(sessionId: string | null, raw: unknown) {
     const identity = this.o.identity.resolve();
