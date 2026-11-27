@@ -13,7 +13,7 @@
 | WorkOS login, password reset, forced password change, roles | Tested | Needs WorkOS settings to run for real |
 | Manage Aurvin (settings, encrypted credentials) | Tested | |
 | User administration | Tested | |
-| Analytics tab | Planned | Tab exists but is empty |
+| Analytics tab (super-admin usage and cost by date range) | Tested | Built in `a286301`; `admin-analytics.spec.ts` (4) and `analytics-state.test.ts` (9) pass on 27 November 2026 (Node 24.21.0). See [admin-analytics](../admin-analytics/README.md) |
 | Google Calendar: connect, multiple calendars, availability, create with confirmation | Tested | Edit, reschedule and delete are Planned (Release 6) |
 | Dictation (Deepgram) | Tested | Offline fixtures only |
 | Live voice (LiveKit) | Implemented | No live LiveKit drill has been run |
