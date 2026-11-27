@@ -219,6 +219,8 @@ export const initialChatState: ChatState = {
   weatherLastSequenceByTurn: {},
   pendingWebContinuationBreak: false,
   taskMode: false,
+  revisionSelection: {},
+  revisionSupersedes: null,
   activeTask: null,
 };
 
@@ -924,6 +926,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         createdAt: new Date().toISOString(),
         completionStatus: 'accepted',
         truncated: false,
+        ...(action.payload.supersedes ? { supersedes: action.payload.supersedes } : {}),
       };
 
       return {
@@ -1154,6 +1157,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         createdAt: new Date().toISOString(),
         completionStatus: action.payload.outcome,
         truncated: action.payload.outcome === 'truncated',
+        ...(state.revisionSupersedes ? { supersedes: state.revisionSupersedes } : {}),
         ...(view ? { calendarView: view } : {}),
         ...(finalWeatherView ? { weatherView: finalWeatherView } : {}),
         ...(finalActivities.length > 0 ? { webActivities: finalActivities } : {}),
@@ -1195,12 +1199,19 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         compaction: mergeCompaction(state.compaction, action.payload.compaction),
         contextUsage: action.payload.contextUsage ?? state.contextUsage,
         messages: [...state.messages, assistantMsg],
+        revisionSupersedes: null,
         activeTask: null,
       };
     }
 
     case 'TASK_MODE_SET':
       return { ...state, taskMode: action.payload };
+
+    case 'REVISION_SELECT':
+      return { ...state, revisionSelection: { ...state.revisionSelection, [action.payload.tipId]: action.payload.messageId } };
+
+    case 'REVISION_PENDING':
+      return { ...state, revisionSupersedes: action.payload.supersedes };
 
     case 'TASK_EVENT': {
       const { sessionId, turnId, attemptId, event } = action.payload;
@@ -1306,4 +1317,65 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     default:
       return state;
   }
+}
+
+// --- Release 1: edit and regenerate versions -------------------------------------------------
+// History is never rewritten: a newer message names the one it replaces (`supersedes`). The
+// transcript shows one version per chain (the newest unless the user walked back), and an
+// edit's replaced turn follows its user message.
+
+export type VersionInfo = { index: number; total: number; prevId: string | null; nextId: string | null; tipId: string };
+
+/** Chains of messages linked by `supersedes`, oldest first, keyed by the newest member. Bounded by loaded messages. */
+function versionChains(messages: readonly VisibleMessage[]): Map<string, VisibleMessage[]> {
+  const byId = new Map(messages.map((m) => [m.messageId, m]));
+  const replaced = new Set<string>();
+  for (const m of messages) if (m.supersedes && byId.has(m.supersedes)) replaced.add(m.supersedes);
+  const out = new Map<string, VisibleMessage[]>();
+  for (const tip of messages) {
+    if (replaced.has(tip.messageId)) continue;
+    const chain = [tip];
+    for (let cur = tip; cur.supersedes && chain.length < 64;) {
+      const prev = byId.get(cur.supersedes);
+      if (!prev) break;
+      chain.unshift(prev);
+      cur = prev;
+    }
+    if (chain.length > 1) out.set(tip.messageId, chain);
+  }
+  return out;
+}
+
+/** The messages the transcript shows: one version per chain, a replaced turn hidden with its user message. */
+export function selectVisibleMessages(
+  messages: readonly VisibleMessage[],
+  selection: Readonly<Record<string, string>> = {},
+  pendingHide: string | null = null,
+): VisibleMessage[] {
+  const hidden = new Set<string>();
+  const hiddenTurns = new Set<string>();
+  if (pendingHide) hidden.add(pendingHide);
+  for (const [tipId, chain] of versionChains(messages)) {
+    const chosen = chain.some((m) => m.messageId === selection[tipId]) ? selection[tipId] : tipId;
+    for (const m of chain) {
+      if (m.messageId === chosen) continue;
+      hidden.add(m.messageId);
+      if (m.role === 'user') hiddenTurns.add(m.turnId);
+    }
+  }
+  return messages.filter((m) => !hidden.has(m.messageId) && !hiddenTurns.has(m.turnId));
+}
+
+/** "Version n of m" data for a visible message, or null when it has no earlier or later version. */
+export function versionInfo(
+  messages: readonly VisibleMessage[],
+  messageId: string,
+): VersionInfo | null {
+  for (const [tipId, chain] of versionChains(messages)) {
+    const at = chain.findIndex((m) => m.messageId === messageId);
+    if (at === -1) continue;
+    return { index: at + 1, total: chain.length, tipId,
+      prevId: chain[at - 1]?.messageId ?? null, nextId: chain[at + 1]?.messageId ?? null };
+  }
+  return null;
 }

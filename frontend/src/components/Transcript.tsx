@@ -23,10 +23,11 @@
 import { Fragment, useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { CompactionCheckpointMeta, VisibleMessage } from '../api/protocol.ts';
 import { useChat } from '../features/chat/state/chat-context.tsx';
-import { nextMessageSequence } from '../features/chat/state/chat-reducer.ts';
+import { nextMessageSequence, selectVisibleMessages } from '../features/chat/state/chat-reducer.ts';
 import { hideCalendarConfirmReplies } from '../features/plugins/google-calendar/CalendarTurnRegion.tsx';
 import { groupVoiceMessages } from './group-voice-messages.ts';
 import { MessageItem } from './MessageItem.tsx';
+import { useRevisionSlots } from './MessageRevisionControls.tsx';
 import { PromptTraveler } from './PromptTraveler.tsx';
 import { TaskCard } from './TaskCard.tsx';
 import { ScrollController } from './ScrollController.tsx';
@@ -129,9 +130,11 @@ export function Transcript({
   ]);
 
   const displayMessages = useMemo(
-    () => groupVoiceMessages(hideCalendarConfirmReplies(state.messages)),
-    [state.messages],
+    () => groupVoiceMessages(hideCalendarConfirmReplies(
+      selectVisibleMessages(state.messages, state.revisionSelection, state.revisionSupersedes))),
+    [state.messages, state.revisionSelection, state.revisionSupersedes],
   );
+  const revisionSlots = useRevisionSlots(displayMessages);
 
   const compaction = state.compaction ?? null;
   const dividerAfterIndex = useMemo(
@@ -179,6 +182,7 @@ export function Transcript({
                   : message
               }
               {...messageActions}
+              actionsStart={revisionSlots.get(message.messageId)}
             />
             {dividerAfterIndex === index && compaction ? (
               <CompactionDivider key={dividerKey} compaction={compaction} />

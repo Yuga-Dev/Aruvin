@@ -96,6 +96,10 @@ export type ChatState = {
   pendingWebContinuationBreak: boolean;
   /** Task mode composer toggle (docs/task-mode-and-flows/spec.md). */
   taskMode: boolean;
+  /** Release 1: version chosen per superseded chain, keyed by the chain's newest message id. */
+  revisionSelection: Record<string, string>;
+  /** Release 1: the answer a running regenerate will replace; hidden while it streams. */
+  revisionSupersedes: string | null;
   /** Plan and step states of the in-flight Task-mode turn. */
   activeTask: TaskSnapshot | null;
 };
@@ -157,7 +161,7 @@ export type ChatAction =
   | { type: 'MESSAGES_ERROR'; payload: string }
   | {
       type: 'TURN_SUBMIT_START';
-      payload: { userContent: string; idempotencyKey: string; hideFromTranscript?: boolean };
+      payload: { userContent: string; idempotencyKey: string; hideFromTranscript?: boolean; supersedes?: string };
     }
   | {
       type: 'TURN_ACCEPTED';
@@ -185,6 +189,8 @@ export type ChatAction =
     }
   | { type: 'STREAM_ERROR'; payload: ClientErrorBody }
   | { type: 'TASK_MODE_SET'; payload: boolean }
+  | { type: 'REVISION_SELECT'; payload: { tipId: string; messageId: string } }
+  | { type: 'REVISION_PENDING'; payload: { supersedes: string | null } }
   | {
       type: 'TASK_EVENT';
       payload: { sessionId: string; turnId: string; attemptId: string; event: TaskPlanEvent | TaskStepEvent };
