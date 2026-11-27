@@ -28,7 +28,10 @@ const MEMORY_METHOD = new Map<string, string>([
   [`/api${USER_MEMORY_ROUTES.enabled}`, 'PATCH'],
   [`/api${USER_MEMORY_ROUTES.edit}`, 'POST'],
   [`/api${USER_MEMORY_ROUTES.clear}`, 'POST'],
+  [`/api${USER_MEMORY_ROUTES.history}`, 'GET'],
 ]);
+const SECTION_PATH = new RegExp(`^/api${USER_MEMORY_ROUTES.memory}/sections/[^/]+$`);
+const HISTORY_PATH = `/api${USER_MEMORY_ROUTES.history}`;
 
 function replyInvalid(res: Response, memory: boolean, statusOverride?: number): void {
   if (res.headersSent || res.writableEnded) return;
@@ -53,7 +56,7 @@ export function configurePersonalizationHttp(
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     const path = req.path.replace(/\/+$/, '').toLowerCase();
-    const memoryMethod = MEMORY_METHOD.get(path);
+    const memoryMethod = SECTION_PATH.test(path) ? 'PATCH' : MEMORY_METHOD.get(path);
     const memory = memoryMethod !== undefined;
     if (!memory && path !== '/api/personalization' &&
       path !== '/api/personalization/reset' && path !== '/api/personalization/reverse-geocode') {
@@ -73,7 +76,8 @@ export function configurePersonalizationHttp(
       next();
       return;
     }
-    if ((req.url ?? '').includes('?')) {
+    // History is the only memory route with a query string; its schema is strict.
+    if ((req.url ?? '').includes('?') && path !== HISTORY_PATH) {
       replyInvalid(res, memory);
       return;
     }

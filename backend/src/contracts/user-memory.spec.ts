@@ -32,7 +32,9 @@ import {
   updateUserMemoryReceiptSchema, userMemoryClearRequestSchema,
   userMemoryEditRequestSchema, userMemoryEditResponseSchema,
   userMemoryEnabledRequestSchema, userMemoryResponseSchema,
-  userMemorySectionsSchema, userMemoryWriterOutputSchema,
+  userMemorySectionsSchema, userMemoryWriterOutputSchema, memoryAuditRecordSchema, memoryAuditViewSchema,
+  userMemoryHistoryQuerySchema, userMemoryHistoryResponseSchema, userMemorySectionEditRequestSchema,
+  userMemorySectionKeySchema,
 } from './index.js';
 
 const at = '2026-11-20T12:00:00.000Z';
@@ -245,4 +247,36 @@ it('journals user_memory upserts and scoped deletes without weakening the facade
     expect.objectContaining({ code: 'UNSUPPORTED_TOPOLOGY' }),
   );
   expect(deleteOne).toHaveBeenCalledTimes(1);
+});
+
+it('section edit, history and audit schemas are strict and bounded', () => {
+  const edit = { protocolVersion: 1, expectedRevision: 1, requestId: 'req-1', text: ' Builds Aurvin.\r\n' };
+  expect(userMemorySectionEditRequestSchema.parse(edit).text).toBe('Builds Aurvin.');
+  expect(userMemorySectionEditRequestSchema.parse({ ...edit, text: '' }).text).toBe('');
+  for (const bad of [{ ...edit, userId: 'u' }, { ...edit, requestId: undefined }, { ...edit, requestId: '' },
+    { ...edit, requestId: 'r'.repeat(129) }, { ...edit, text: 'x'.repeat(5001) }, { ...edit, text: 'sk-or-v1-fixture' },
+    { ...edit, text: 'a\u0000' }, { ...edit, expectedRevision: -1 }, { ...edit, protocolVersion: 2 }])
+    expect(userMemorySectionEditRequestSchema.safeParse(bad).success).toBe(false);
+  expect(userMemoryClearRequestSchema.parse({ protocolVersion: 1, expectedRevision: 1, requestId: 'r' }).requestId).toBe('r');
+  expect(userMemorySectionKeySchema.safeParse('other').success).toBe(true);
+  expect(userMemorySectionKeySchema.safeParse('summary').success).toBe(false);
+  expect(userMemoryHistoryQuerySchema.parse({}).limit).toBe(50);
+  expect(userMemoryHistoryQuerySchema.parse({ limit: '7', cursor: 'abc_-' })).toEqual({ limit: 7, cursor: 'abc_-' });
+  for (const bad of [{ limit: '51' }, { limit: '0' }, { cursor: 'a b' }, { cursor: 'a'.repeat(257) }, { userId: 'u' }])
+    expect(userMemoryHistoryQuerySchema.safeParse(bad).success).toBe(false);
+  const audit = { schemaVersion: 1, kind: 'memory-audit', userId: 'u', memoryRevision: 2, at, action: 'passive',
+    source: 'passive', sections: ['work'], charsBefore: 0, charsAfter: 10, origin: { sessionId: 's', turnId: 't' } };
+  expect(memoryAuditRecordSchema.parse(audit)).toEqual(audit);
+  expect(memoryAuditRecordSchema.safeParse({ ...audit, memoryRevision: 0 }).success).toBe(false);
+  for (const extra of [{ changeSummary: 'text' }, { text: 'x' }, { sessionId: 's' }, { sections: ['a'] },
+    { sections: Array(6).fill('work') }, { action: 'other' }, { charsAfter: 2501 }, { origin: { sessionId: 's' } },
+    { origin: { sessionId: 's', turnId: 't', extra: 1 } }])
+    expect(memoryAuditRecordSchema.safeParse({ ...audit, ...extra }).success).toBe(false);
+  const view = { memoryRevision: 2, at, action: 'tool', source: 'tool', sections: [], charsBefore: 1, charsAfter: 1 };
+  expect(memoryAuditViewSchema.safeParse(view).success).toBe(true);
+  expect(memoryAuditViewSchema.safeParse({ ...view, userId: 'u' }).success).toBe(false);
+  expect(userMemoryHistoryResponseSchema.safeParse({ protocolVersion: 1, items: [view], nextCursor: null,
+    gaps: [{ fromRevision: 3, toRevision: 4 }] }).success).toBe(true);
+  expect(userMemoryHistoryResponseSchema.safeParse({ protocolVersion: 1, items: Array(51).fill(view),
+    nextCursor: null, gaps: [] }).success).toBe(false);
 });

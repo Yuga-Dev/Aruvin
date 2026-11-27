@@ -39,7 +39,7 @@ export {
   type ReverseGeocodeOptions,
 } from './reverse-geocode.js';
 export { UserMemoryController } from './user-memory.controller.js';
-export { UserMemoryService, type CachedUserMemory, type UserMemoryEditResult,
+export { UserMemoryService, type CachedUserMemory, type MemoryAuditInfo, type UserMemoryEditResult,
   type UserMemoryServiceOptions } from './user-memory.service.js';
 export { MemoryWriterService, type MemoryInstructionOptions, type MemoryWriterConfig,
   type MemoryWriterDeltaMessage, type MemoryWriterScope, type MemoryWriterServiceOptions } from './memory-writer.js';

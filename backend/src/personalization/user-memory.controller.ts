@@ -4,15 +4,16 @@
  * LOCATION: backend/src/personalization/user-memory.controller.ts
  * PURPOSE: Expose authenticated owner-scoped memory management.
  * ROLE IN PROJECT: Projects the Personalization memory API without trusting inputs as identity.
- * KEY COMPONENTS: Four routes, server identity, and closed error responses.
+ * KEY COMPONENTS: Memory, enable, edit, clear, section edit and history routes; server identity; closed errors.
  * ============================================================================
  */
-import { Body, Catch, Controller, Get, HttpCode, Inject, Patch, Post, Res, UseFilters,
+import { Body, Catch, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query, Res, UseFilters,
   type ArgumentsHost, type ExceptionFilter } from '@nestjs/common';
 import type { Response } from 'express';
 import { AuthFault } from '../auth/errors.js';
 import { USER_MEMORY_ROUTES, userMemoryClearRequestSchema, userMemoryEditRequestSchema, userMemoryEnabledRequestSchema,
-  type UserMemoryEditResponse, type UserMemoryResponse } from '../contracts/user-memory.js';
+  userMemoryHistoryQuerySchema, userMemorySectionEditRequestSchema, userMemorySectionKeySchema,
+  type UserMemoryEditResponse, type UserMemoryHistoryResponse, type UserMemoryResponse } from '../contracts/user-memory.js';
 import { UserMemoryFault } from './errors.js';
 import { MemoryWriterService } from './memory-writer.js';
 import { PERSONALIZATION_USER_ID } from './personalization.controller.js';
@@ -52,7 +53,8 @@ export class UserMemoryController {
     const userId = this.resolveUserId();
     const parsed = userMemoryEnabledRequestSchema.safeParse(body);
     if (!parsed.success) throw new UserMemoryFault('INVALID_REQUEST');
-    return this.requireMemory().setEnabled(userId, parsed.data.expectedRevision, parsed.data.enabled);
+    return this.requireMemory().setEnabled(userId, parsed.data.expectedRevision, parsed.data.enabled,
+      parsed.data.requestId);
   }
 
   @Post('edit')
@@ -68,7 +70,8 @@ export class UserMemoryController {
     if (res.destroyed) disconnect();
     try {
       const result = await this.writer.applyInstruction(userId, parsed.data.instruction, {
-        source: 'composer', expectedRevision: parsed.data.expectedRevision, signal: controller.signal,
+        source: 'composer', expectedRevision: parsed.data.expectedRevision, requestId: parsed.data.requestId,
+        signal: controller.signal,
       });
       return { ...result.memory, changeSummary: result.changeSummary };
     } finally {
@@ -82,7 +85,26 @@ export class UserMemoryController {
     const userId = this.resolveUserId();
     const parsed = userMemoryClearRequestSchema.safeParse(body);
     if (!parsed.success) throw new UserMemoryFault('INVALID_REQUEST');
-    return this.requireMemory().clear(userId, parsed.data.expectedRevision);
+    return this.requireMemory().clear(userId, parsed.data.expectedRevision, parsed.data.requestId);
+  }
+
+  @Patch('sections/:key')
+  editSection(@Param('key') key: string, @Body() body: unknown): Promise<UserMemoryResponse> {
+    const userId = this.resolveUserId();
+    const section = userMemorySectionKeySchema.safeParse(key);
+    const parsed = userMemorySectionEditRequestSchema.safeParse(body);
+    if (!section.success || !parsed.success) throw new UserMemoryFault('INVALID_REQUEST', null,
+      !parsed.success && parsed.error.issues.some(issue => issue.message === 'secret_pattern'));
+    return this.requireMemory().editSection(userId, parsed.data.expectedRevision, section.data,
+      parsed.data.text, parsed.data.requestId);
+  }
+
+  @Get('history')
+  history(@Query() query: unknown): Promise<UserMemoryHistoryResponse> {
+    const userId = this.resolveUserId();
+    const parsed = userMemoryHistoryQuerySchema.safeParse(query);
+    if (!parsed.success) throw new UserMemoryFault('INVALID_REQUEST');
+    return this.requireMemory().history(userId, parsed.data);
   }
 
   private requireMemory(): UserMemoryService {

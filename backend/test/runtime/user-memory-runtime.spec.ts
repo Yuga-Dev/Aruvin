@@ -36,6 +36,9 @@ import { UPDATE_USER_MEMORY_NATIVE_TOOL, UPDATE_USER_MEMORY_TOOL_DEFINITION }
 import { calendarBinding, calendarLimits, skillRequest, nativeFrame } from '../model/calendar-fixtures.js';
 import { collect, config } from '../model/helpers.js';
 import { UserMemoryFault } from '../../src/personalization/errors.js';
+import { UserMemoryService } from '../../src/personalization/user-memory.service.js';
+import { memoryAuditFor } from '../../src/persistence/memory-audit.js';
+import type { UserMemoryRepository } from '../../src/contracts/repositories.js';
 import { authority } from './dev-mode-fixture.js';
 import { AppService, prepareConfigurationSnapshot } from '../../src/app.service.js';
 import { loadModelLimits } from '../../src/model/catalogue.js';
@@ -899,4 +902,97 @@ it('holds one in-flight sweep page and starts no further sweep after shutdown', 
     held.resolve([]); vi.useRealTimers();
     await service.operations.shutdown(); await r.f.dispose();
   }
+});
+
+function liveMemory(r: Awaited<ReturnType<typeof rig>>) {
+  const rows = new Map<string, StoredUserMemory>([[stored.userId, stored]]);
+  const save = async (...[userId, expected, settings, updatedAt]:
+    Parameters<UserMemoryRepository['compareAndSwap']>) => {
+    const current = rows.get(userId)?.revision ?? 0;
+    if (current !== expected) return { outcome: 'conflict', currentRevision: current } as const;
+    const record = { ...settings, schemaVersion: 1 as const, userId, revision: expected + 1, updatedAt };
+    rows.set(userId, record);
+    return { outcome: 'confirmed', record } as const;
+  };
+  const service = new UserMemoryService({ now: () => new Date(at), auditRetryMs: 0,
+    audit: () => memoryAuditFor(r.p),
+    repository: () => ({ read: async u => rows.get(u) ?? null,
+      createIfAbsent: (u, s, t) => save(u, 0, s, t), compareAndSwap: save }) });
+  r.cachedSnapshot.mockImplementation(u => service.cachedSnapshot(u));
+  r.cachedMemory.mockImplementation(u => service.cachedMemory(u) as StoredUserMemory | null | undefined);
+  return service;
+}
+const auditRows = (r: Awaited<ReturnType<typeof rig>>) =>
+  [...r.db.rows('metadata').values()].filter(row => row.kind === 'memory-audit');
+
+it('next turn after a passive addition keeps the frozen pin', async () => {
+  const r = await rig();
+  const { f } = r;
+  try {
+    const memory = liveMemory(r);
+    await memory.warm(stored.userId);
+    const one = await f.submit('First message.');
+    await r.execute(one);
+    await r.flush(one.sessionId);
+    await memory.applyEdit(stored.userId, { requireEnabled: true,
+      audit: { action: 'passive', source: 'passive', origin: { sessionId: one.sessionId, turnId: one.turnId } } },
+    async sections => ({ changed: true, changeSummary: '', sections: { ...sections, work: 'Passive fact.' } }));
+    expect(memory.cachedSnapshot(stored.userId)?.revision).toBe(2);
+    await r.execute(await f.submit('Second message.', one.sessionId));
+    expect(wires(f)).toHaveLength(2);
+    expect(memoryBlock(wires(f)[1])?.content).toContain(beans.content);
+    expect(memoryBlock(wires(f)[1])?.content).not.toContain('Passive fact.');
+    await memory.drainAudit();
+    expect(auditRows(r)).toMatchObject([{ action: 'passive', origin: { sessionId: one.sessionId } }]);
+  } finally { await f.dispose(); }
+});
+
+it('memory edit and delete read no database before model dispatch', async () => {
+  const r = await rig();
+  const { f, db } = r;
+  try {
+    const memory = liveMemory(r);
+    await memory.warm(stored.userId);
+    await memory.editSection(stored.userId, 1, 'work', 'Builds Aurvin.', 'req-rt-1');
+    await memory.drainAudit();
+    expect(auditRows(r)).toHaveLength(1);
+    const seen: number[] = [];
+    const provider = f.fetcher.getMockImplementation()!;
+    f.fetcher.mockImplementation((...args) => { seen.push(db.calls.length); return provider(...args); });
+    const base = db.calls.length;
+    const edited = await f.submit('New chat after an edit.');
+    await r.execute(edited);
+    expect(seen).toEqual([base]);
+    expect(memoryBlock(wires(f)[0])?.content).toContain('Builds Aurvin.');
+    await r.flush(edited.sessionId);
+    await memory.clearSection(stored.userId, 2, 'work', 'req-rt-2');
+    await memory.clear(stored.userId, 3, 'req-rt-3');
+    await memory.drainAudit();
+    const afterDelete = db.calls.length;
+    const deleted = await f.submit('New chat after a delete.');
+    await r.execute(deleted);
+    expect(seen[1]).toBe(afterDelete);
+    expect(memoryBlock(wires(f)[1])).toBeUndefined();
+    expect(auditRows(r).map(row => row.action)).toEqual(
+      expect.arrayContaining(['edit-section', 'clear-section', 'clear-all']));
+    expect(JSON.stringify(auditRows(r))).not.toMatch(/Builds Aurvin|Beans/);
+  } finally { await f.dispose(); }
+});
+
+it('ephemeral chats write no audit', async () => {
+  const r = await rig();
+  const { f } = r;
+  try {
+    const memory = liveMemory(r);
+    await memory.warm(stored.userId);
+    const ids = await f.runtime.submitTurn({ identity: f.identity, sessionId: null,
+      content: 'Temporary input', idempotencyKey: 'temporary-audit-1', ephemeral: true });
+    await r.execute(ids);
+    await r.flush(ids.sessionId);
+    await memory.drainAudit();
+    expect(memoryBlock(wires(f)[0])).toBeUndefined();
+    expect(r.applyInstruction).not.toHaveBeenCalled();
+    expect(r.synthesize).not.toHaveBeenCalled();
+    expect(auditRows(r)).toEqual([]);
+  } finally { await f.dispose(); }
 });
