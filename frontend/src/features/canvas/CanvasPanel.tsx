@@ -40,6 +40,7 @@ import {
 import { matchesCanvasArtifact } from './weather-workspace.ts';
 import { ArtifactKindIcon } from './CanvasArtifactCard.tsx';
 import type { CanvasArtifact } from './canvas-types.ts';
+import { TableRenderer } from './renderers/table-renderer.tsx';
 import { CalendarEventRenderer } from './renderers/calendar-event-renderer.tsx';
 import { CalendarViewBoundary, CalendarViewRenderer } from './renderers/calendar-view-renderer.tsx';
 import { ChartRenderer } from './renderers/chart-renderer.tsx';
@@ -65,7 +66,9 @@ export function toArtifactPath(artifact: CanvasArtifact): string {
           ? 'event.json'
           : artifact.kind === 'weather'
             ? 'weather.json'
-            : 'chart.json';
+            : artifact.kind === 'table'
+              ? 'table.json'
+              : 'chart.json';
   return `canvas/${slug}.${ext}`;
 }
 
@@ -130,7 +133,8 @@ export function CanvasPanel({
     null;
   const calendarMode = activeArtifact?.kind === 'calendar';
   const weatherMode = activeArtifact?.kind === 'weather';
-  const structuredMode = calendarMode || weatherMode;
+  const tableMode = activeArtifact?.kind === 'table';
+  const structuredMode = calendarMode || weatherMode || tableMode;
 
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
   const [view, setView] = useState<CanvasView>(DEFAULT_CANVAS_VIEW);
@@ -484,7 +488,11 @@ export function CanvasPanel({
 
       {/* Main Canvas Body */}
       <div className="aurvin-canvas-body">
-        {calendarMode ? calendarBody : weatherMode ? weatherBody : viewMode === 'code' ? (
+        {tableMode && viewMode === 'preview' ? (
+          <div ref={bodyRef} className="aurvin-canvas-calendar-body aurvin-canvas-table-body">
+            <TableRenderer source={activeArtifact.rawSource} title={activeArtifact.title} />
+          </div>
+        ) : calendarMode ? calendarBody : weatherMode ? weatherBody : viewMode === 'code' ? (
           <CodeLinesView code={activeArtifact.rawSource} bodyRef={bodyRef} />
         ) : (
           <div
