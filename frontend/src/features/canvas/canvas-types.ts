@@ -24,7 +24,7 @@ import type { WeatherView } from '../../api/weather-protocol.ts';
 import type { CalendarWorkspace } from './calendar-workspace.ts';
 import type { WeatherWorkspace } from './weather-workspace.ts';
 
-export type CanvasArtifactKind = 'mermaid' | 'chart' | 'svg' | 'calendar' | 'weather';
+export type CanvasArtifactKind = 'mermaid' | 'chart' | 'svg' | 'calendar' | 'weather' | 'table';
 
 export type CalendarEventDateTime = {
   dateTime?: string;
