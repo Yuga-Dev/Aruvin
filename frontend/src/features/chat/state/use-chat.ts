@@ -1177,6 +1177,16 @@ export function useChatActions(
     dispatch({ type: 'STREAM_CANCELLED' });
   }, [client, dispatch, state.activeAttemptId, state.activeSessionId, state.activeTurnId, coalescer]);
 
+  /** Skip a queued task step. Rejects on failure so the card can show its own error. */
+  const skipTaskStep = useCallback(
+    async (stepId: string) => {
+      const { activeSessionId, activeTurnId, activeAttemptId } = stateRef.current;
+      if (!activeSessionId || !activeTurnId || !activeAttemptId) throw new Error('No running task.');
+      await client.skipTaskStep(activeSessionId, activeTurnId, stepId, activeAttemptId);
+    },
+    [client],
+  );
+
   const retryTurn = useCallback(
     async (turnId: string, targetSessionId?: string) => {
       const sessionId = targetSessionId ?? stateRef.current.activeSessionId;
@@ -1304,6 +1314,7 @@ export function useChatActions(
       retrySave,
       cancelCurrentTurn,
       retryTurn,
+      skipTaskStep,
       setDraft,
       isVoiceInputLocked,
       claimVoiceInput,
@@ -1325,6 +1336,7 @@ export function useChatActions(
       retrySave,
       cancelCurrentTurn,
       retryTurn,
+      skipTaskStep,
       setDraft,
       isVoiceInputLocked,
       claimVoiceInput,

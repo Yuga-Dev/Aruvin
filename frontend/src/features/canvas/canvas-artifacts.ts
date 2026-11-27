@@ -29,6 +29,8 @@ import { isCalendarView, type CalendarTurnState } from '../../api/calendar-proto
 import { isWeatherView } from '../../api/weather-protocol.ts';
 import { calendarViewArtifact } from './calendar-workspace.ts';
 import { weatherViewArtifact } from './weather-workspace.ts';
+import { FEATURE_FLAGS } from '../../app/feature-flags.ts';
+import { parseClassDiagram, parseErDiagram, parseMindmap } from './diagram-parsers.ts';
 import { parseMarkdown } from '../chat/markdown/parse-markdown.ts';
 import type {
   CalendarEventDateTime,
@@ -1048,6 +1050,7 @@ export function parseCanvasCodeBlock(
   messageId: string,
   index: number,
   isStreaming = false,
+  tablesEnabled: boolean = FEATURE_FLAGS.canvasTables,
 ): CanvasArtifact | null {
   const info = lang.trim();
   const firstToken = (info.split(/\s+/)[0] ?? '').toLowerCase();
@@ -1086,6 +1089,8 @@ export function parseCanvasCodeBlock(
     }
   } else if (firstToken === 'svg') {
     kind = 'svg';
+  } else if (firstToken === 'table' && tablesEnabled) {
+    kind = 'table';
   } else if (firstToken === 'calendar' || firstToken === 'event') {
     kind = 'calendar';
   } else if (firstToken === 'canvas') {
@@ -1220,6 +1225,20 @@ export function parseCanvasCodeBlock(
       subType,
       title,
       buttonLabel: 'View calendar event',
+      rawSource: code,
+      isStreaming,
+    };
+  }
+
+  if (kind === 'table') {
+    return {
+      artifactId,
+      messageId,
+      index,
+      kind: 'table',
+      subType: 'Data Table',
+      title: explicitTitle || trailingPlainTitle || 'Data Table',
+      buttonLabel: 'View table',
       rawSource: code,
       isStreaming,
     };
@@ -1371,6 +1390,7 @@ export function buttonLabelForCanvasArtifact(
   subType: string,
 ): string {
   if (kind === 'calendar') return 'View calendar event';
+  if (kind === 'table') return 'View table';
   const lower = subType.trim().toLowerCase();
   if (kind === 'svg') return 'View diagram';
   if (kind === 'mermaid') {
@@ -2023,10 +2043,21 @@ function parseStateDiagram(body: string, fallbackTitle?: string): MermaidFlowMod
   };
 }
 
-export function parseMermaidSource(raw: string, fallbackTitle?: string): MermaidParsedModel {
+export function parseMermaidSource(
+  raw: string,
+  fallbackTitle?: string,
+  moreDiagrams: boolean = FEATURE_FLAGS.canvasMoreDiagrams,
+): MermaidParsedModel {
   const { title: fmTitle, body } = stripFrontmatterAndComments(raw);
   const lines = body.split('\n').map((l) => l.trim()).filter(Boolean);
   const firstLine = lines[0] ?? '';
+
+  if (moreDiagrams) {
+    const t = fmTitle ?? fallbackTitle;
+    if (/^mindmap\b/i.test(firstLine)) return parseMindmap(body, t);
+    if (/^erDiagram\b/i.test(firstLine)) return parseErDiagram(body, t);
+    if (/^classDiagram(?:-v2)?\b/i.test(firstLine)) return parseClassDiagram(body, t);
+  }
 
   if (/^stateDiagram(?:-v2)?\b/i.test(firstLine)) {
     return parseStateDiagram(body, fmTitle ?? fallbackTitle);

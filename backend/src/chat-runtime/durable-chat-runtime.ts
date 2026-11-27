@@ -1396,6 +1396,12 @@ export class DurableChatRuntime {
     await this.visibleTurn(id.userId, c.sessionId, c.turnId);
     return this.cancelOwnedTurn(c);
   }
+  async skipTaskStep(c: CancelTurnCommand, stepId: string): Promise<void> {
+    const id = this.identity(c.identity);
+    const memory = this.memoryFor(id.userId);
+    if (!memory) throw new AppError('NOT_FOUND', 'No running task.');
+    await memory.skipTaskStep(c, stepId);
+  }
   cancelLiveTurn(c: CancelTurnCommand, reservation: ExecutionReservation): Promise<void> {
     try {
       const id = this.identity(c.identity); this.reservations.assertLive(reservation, id, c.sessionId);

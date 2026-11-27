@@ -15,7 +15,7 @@
  * KEY COMPONENTS:
  *    - TaskPlan / TaskSnapshot / task events: types.
  *    - isTaskPlanEvent / isTaskStepEvent / isTaskSnapshot: exact-key validators.
- *    - applyTaskStep: Pure snapshot update used by the chat reducer.
+ *    - applyTaskStep / endTask: Pure snapshot updates used by the chat reducer.
  * ============================================================================
  */
 
@@ -27,11 +27,15 @@ export type TaskStep = {
   tool: 'calendar' | 'web' | 'environment' | 'none'
 }
 export type TaskPlan = { goal: string; steps: TaskStep[] }
+/** Absent on a completed task; the other terminal states are distinct (spec §2.5). */
+export type TaskOutcome = 'cancelled' | 'failed' | 'interrupted' | 'budget_exceeded'
 export type TaskSnapshot = {
   version: 1
   taskId: string
   plan: TaskPlan
-  steps: { stepId: string; status: TaskStepStatus }[]
+  /** `summary` is live-only (from task-step events); the saved snapshot never carries it. */
+  steps: { stepId: string; status: TaskStepStatus; summary?: string }[]
+  outcome?: TaskOutcome
 }
 export type TaskPlanEvent = { type: 'task-plan'; version: 1; taskId: string; plan: TaskPlan }
 export type TaskStepEvent = {
@@ -76,8 +80,11 @@ export function isTaskStepEvent(v: Record<string, unknown>): v is TaskStepEvent 
     (!('proposalId' in v) || isId(v.proposalId))
 }
 
+const OUTCOMES: readonly string[] = ['cancelled', 'failed', 'interrupted', 'budget_exceeded']
+
 export function isTaskSnapshot(v: unknown): v is TaskSnapshot {
-  return isRecord(v) && exact(v, ['version', 'taskId', 'plan', 'steps']) && v.version === 1 && isId(v.taskId) &&
+  return isRecord(v) && exact(v, ['version', 'taskId', 'plan', 'steps'], ['outcome']) && v.version === 1 && isId(v.taskId) &&
+    (!('outcome' in v) || OUTCOMES.includes(v.outcome as string)) &&
     isTaskPlan(v.plan) && Array.isArray(v.steps) && v.steps.length <= MAX_STEPS &&
     v.steps.every((s) => isRecord(s) && exact(s, ['stepId', 'status']) && isStepId(s.stepId) &&
       STATUSES.includes(s.status as string))
@@ -92,5 +99,19 @@ export const snapshotForPlan = (event: TaskPlanEvent): TaskSnapshot => ({
 /** Apply one step event; events for another task are ignored. */
 export function applyTaskStep(snapshot: TaskSnapshot, event: TaskStepEvent): TaskSnapshot {
   if (event.taskId !== snapshot.taskId) return snapshot
-  return { ...snapshot, steps: snapshot.steps.map((s) => (s.stepId === event.stepId ? { ...s, status: event.status } : s)) }
+  return {
+    ...snapshot,
+    steps: snapshot.steps.map((s) =>
+      s.stepId === event.stepId ? { ...s, status: event.status, ...(event.summary ? { summary: event.summary } : {}) } : s),
+  }
+}
+
+/** Close a task that ended without completing: the running step fails (cancelled: skipped), the rest stay as they were. */
+export function endTask(snapshot: TaskSnapshot, outcome: TaskOutcome): TaskSnapshot {
+  return {
+    ...snapshot,
+    outcome,
+    steps: snapshot.steps.map((s) =>
+      s.status === 'running' ? { ...s, status: outcome === 'cancelled' ? ('skipped' as const) : ('failed' as const) } : s),
+  }
 }

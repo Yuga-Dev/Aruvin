@@ -48,6 +48,8 @@ export const API_ROUTES = {
     `/sessions/${sessionId}/turns/${turnId}/retry`,
   retrySave: (sessionId: string, turnId: string) =>
     `/sessions/${sessionId}/turns/${turnId}/retry-save`,
+  skipTaskStep: (sessionId: string, turnId: string, stepId: string) =>
+    `/sessions/${sessionId}/turns/${turnId}/steps/${stepId}/skip`,
 } as const;
 
 export const submitTurnRequestSchema = z
@@ -84,6 +86,9 @@ export const cancelTurnRequestSchema = z
     attemptId: idSchema,
   })
   .strict();
+
+/** Same shape as cancel: the body names the attempt; identity is always server-resolved. */
+export const skipTaskStepRequestSchema = cancelTurnRequestSchema;
 
 export const retrySaveRequestSchema = z.object({ epoch: idSchema,
   version: z.number().int().nonnegative().safe() }).strict();

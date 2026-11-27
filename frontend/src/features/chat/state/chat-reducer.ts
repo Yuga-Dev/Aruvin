@@ -18,7 +18,7 @@
  * ============================================================================
  */
 
-import { applyTaskStep, snapshotForPlan } from '../../../api/task-protocol.ts';
+import { applyTaskStep, endTask, snapshotForPlan, type TaskOutcome, type TaskSnapshot } from '../../../api/task-protocol.ts';
 import type {
   AttemptStatus,
   ClientErrorBody,
@@ -299,12 +299,26 @@ function mergeCompaction(
   return incoming;
 }
 
+/**
+ * A task that ends without completing keeps its card: on the partial answer when
+ * there is one, otherwise as the retained activeTask (rendered on its own).
+ */
+function endedTask(state: ChatState, outcome: TaskOutcome): {
+  activeTask: TaskSnapshot | null;
+  taskForMessage: TaskSnapshot | undefined;
+} {
+  if (!state.activeTask) return { activeTask: null, taskForMessage: undefined };
+  const ended = endTask(state.activeTask, outcome);
+  return state.streamText ? { activeTask: null, taskForMessage: ended } : { activeTask: ended, taskForMessage: undefined };
+}
+
 function appendTerminalAssistant(
   state: ChatState,
   completionStatus: VisibleMessage['completionStatus'],
   truncated: boolean,
   messageId: string,
   web: { webActivities: WebSearchActivity[]; webSources: WebSourceReference[] },
+  task?: TaskSnapshot,
 ): VisibleMessage[] {
   if (!state.streamText) {
     return state.messages;
@@ -322,6 +336,7 @@ function appendTerminalAssistant(
     truncated,
     ...(web.webActivities.length > 0 ? { webActivities: web.webActivities } : {}),
     ...(web.webSources.length > 0 ? { webSources: web.webSources } : {}),
+    ...(task ? { task } : {}),
   };
 
   return [...state.messages, assistantMsg];
@@ -1199,6 +1214,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'STREAM_ERROR': {
       const web = takeTurnWebProvenance(state, state.activeTurnId);
       const weather = takeTurnWeatherView(state, state.activeTurnId);
+      const ended = endedTask(state, action.payload.code === 'STORAGE_BUDGET_EXCEEDED' ? 'budget_exceeded' : 'failed');
       return {
         ...state,
         isStreaming: false,
@@ -1214,12 +1230,14 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         webLastSequenceByTurn: web.nextSeqByTurn,
         weatherViewsByTurn: weather.nextViewsByTurn,
         weatherLastSequenceByTurn: weather.nextSeqByTurn,
+        activeTask: ended.activeTask,
         messages: appendTerminalAssistant(
           state,
           'failed',
           false,
           `failed_${state.activeTurnId ?? 'turn'}`,
           web,
+          ended.taskForMessage,
         ),
       };
     }
@@ -1227,6 +1245,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'STREAM_CANCELLED': {
       const web = takeTurnWebProvenance(state, state.activeTurnId);
       const weather = takeTurnWeatherView(state, state.activeTurnId);
+      const ended = endedTask(state, 'cancelled');
       return {
         ...state,
         isStreaming: false,
@@ -1242,12 +1261,14 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         webLastSequenceByTurn: web.nextSeqByTurn,
         weatherViewsByTurn: weather.nextViewsByTurn,
         weatherLastSequenceByTurn: weather.nextSeqByTurn,
+        activeTask: ended.activeTask,
         messages: appendTerminalAssistant(
           state,
           'cancelled',
           false,
           `cancelled_${state.activeTurnId ?? 'turn'}`,
           web,
+          ended.taskForMessage,
         ),
       };
     }
@@ -1255,6 +1276,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'STREAM_INTERRUPTED': {
       const web = takeTurnWebProvenance(state, state.activeTurnId);
       const weather = takeTurnWeatherView(state, state.activeTurnId);
+      const ended = endedTask(state, 'interrupted');
       return {
         ...state,
         isStreaming: false,
@@ -1269,12 +1291,14 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         webLastSequenceByTurn: web.nextSeqByTurn,
         weatherViewsByTurn: weather.nextViewsByTurn,
         weatherLastSequenceByTurn: weather.nextSeqByTurn,
+        activeTask: ended.activeTask,
         messages: appendTerminalAssistant(
           state,
           'interrupted',
           false,
           `interrupted_${state.activeTurnId ?? 'turn'}`,
           web,
+          ended.taskForMessage,
         ),
       };
     }

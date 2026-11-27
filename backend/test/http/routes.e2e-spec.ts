@@ -142,3 +142,18 @@ it('admits requests and initializes stream writer when currentConfig is injected
   }
 });
 
+it('skip step route: server identity, strict body, valid step id, and no session storage read', async () => {
+  const o = fixtureOptions(); const skip = vi.fn(async () => undefined);
+  o.runtime.skipTaskStep = skip; const h = await httpHarness(o);
+  try {
+    const api = request(h.app.getHttpServer());
+    await api.post('/api/sessions/s1/turns/t1/steps/s2/skip').send({ attemptId:'a1' }).expect(204);
+    expect(skip).toHaveBeenCalledWith(expect.objectContaining({ sessionId:'s1',turnId:'t1',attemptId:'a1',
+      identity:expect.objectContaining({ userId:'server-user' }) }),'s2');
+    expect(o.sessions.get).not.toHaveBeenCalled();
+    await api.post('/api/sessions/s1/turns/t1/steps/s2/skip').send({ attemptId:'a1',userId:'other' }).expect(400);
+    await api.post('/api/sessions/s1/turns/t1/steps/s9/skip').send({ attemptId:'a1' }).expect(400);
+    await api.post('/api/sessions/s1/turns/t1/steps/s2/skip').send({}).expect(400);
+    expect(skip).toHaveBeenCalledTimes(1);
+  } finally { await h.close(); }
+});
