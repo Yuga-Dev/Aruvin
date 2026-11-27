@@ -38,6 +38,8 @@ import {
 import { EmotionSlider } from './EmotionSlider.tsx';
 import { LocationCard } from './LocationCard.tsx';
 import { MemoryCard } from './MemoryCard.tsx';
+import { MemoryView } from '../memory/MemoryView.tsx';
+import { memoryViewEnabled } from '../memory/memory-state.ts';
 import {
   canResetToDefaults,
   clientInstructionsValidationError,
@@ -483,11 +485,11 @@ export function PersonalizationPanel({
         </>
       ) : null}
 
-      <MemoryCard
-        client={userMemoryClient}
-        disabled={disabled}
-        onBusyChange={setMemoryBusy}
-      />
+      {memoryViewEnabled() ? (
+        <MemoryView client={userMemoryClient} disabled={disabled} onBusyChange={setMemoryBusy} />
+      ) : (
+        <MemoryCard client={userMemoryClient} disabled={disabled} onBusyChange={setMemoryBusy} />
+      )}
 
       <ConfirmDialog
         open={confirmResetOpen}

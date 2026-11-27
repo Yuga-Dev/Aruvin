@@ -21,7 +21,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { LiveKitVoiceClient } from '../../../api/livekit-voice-client.ts';
+import { createLazyLiveKitClient, preloadLiveKitClient } from './lazy-livekit-client.ts';
 import { VoiceHttpClient } from '../../../api/voice-client.ts';
 import type { CalendarConfirmPayload } from '../../../api/voice-protocol.ts';
 import type { CanvasArtifact } from '../../canvas/canvas-types.ts';
@@ -63,8 +63,11 @@ export function useLiveVoice(options: {
   useLayoutEffect(() => { latest.current = options; }, [options]);
   const [http] = useState(() => new VoiceHttpClient());
   const config = useVoiceCapabilities();
+  // Prefetch the transport chunk once live voice is available, so the gesture-bound prepare() stays synchronous.
+  const liveEnabled = Boolean(config?.enabledModes.live);
+  useEffect(() => { if (liveEnabled) void preloadLiveKitClient().catch(() => {}); }, [liveEnabled]);
   const [controller] = useState(() => new LiveVoiceController({ http,
-    client: callbacks => new LiveKitVoiceClient(callbacks),
+    client: callbacks => createLazyLiveKitClient(callbacks),
     support: () => supportsLiveVoice(),
     bindings: {
       claimVoiceInput: (mode, onClose) => latest.current.bindings.claimVoiceInput(mode, onClose),

@@ -18,8 +18,8 @@
 
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, expect, it, vi } from 'vitest';
-import { ChatView } from './ChatView.tsx';
+import { beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { ChatView, LazyCanvasPanel } from './ChatView.tsx';
 import { initialLiveVoice } from '../voice/state/live-voice-reducer.ts';
 import type { LiveVoiceSurface } from '../voice/state/useLiveVoice.ts';
 import { foldCalendarFrame } from '../canvas/calendar-workspace.ts';
@@ -34,6 +34,9 @@ const context = vi.hoisted(() => ({ state: {} as Record<string, unknown>, dispat
 vi.mock('./state/chat-context.tsx', () => ({ useChat: () => context }));
 vi.mock('../voice/dictation/useDictation.ts', () => ({ useDictation: () => ({ config: null,
   locked: false, phase: 'idle', status: '', notice: null, start: vi.fn(), stop: vi.fn(), cancel: vi.fn() }) }));
+
+// The Canvas panel is a lazy chunk; load it so static markup renders it synchronously.
+beforeAll(() => LazyCanvasPanel.preload());
 
 beforeEach(() => { context.state = { ...initialChatState, draftInput: 'UNSENT_SECRET_DRAFT',
   activeSessionId: 'chat-1', messages: [{ messageId: 'm1', turnId: 't1', eventId: 'e1', sequence: 0,

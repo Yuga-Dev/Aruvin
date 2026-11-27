@@ -16,7 +16,9 @@ import { expect, it, vi } from 'vitest';
 import { AuthFault } from '../auth/errors.js';
 import { DEFAULT_BUDGETS } from '../contracts/budgets.js';
 import type { UserMemoryRepository } from '../contracts/repositories.js';
-import { userMemoryEditResponseSchema, userMemoryResponseSchema, type StoredUserMemory } from '../contracts/user-memory.js';
+import { userMemoryEditResponseSchema, userMemoryHistoryResponseSchema, userMemoryResponseSchema,
+  type MemoryAuditRecord, type StoredUserMemory } from '../contracts/user-memory.js';
+import type { MemoryAuditPort } from '../persistence/memory-audit.js';
 import { configurePrivateHttp } from '../http/configure-private-http.js';
 import { RequestIdentityStore } from '../platform/identity/request-identity-store.js';
 import { principal } from '../../test/assembly/auth-principal-fixture.js';
@@ -49,7 +51,23 @@ async function fixture(wired = true) {
     createIfAbsent: vi.fn<UserMemoryRepository['createIfAbsent']>((id, settings, at) => save(id, 0, settings, at)),
     compareAndSwap: vi.fn<UserMemoryRepository['compareAndSwap']>(save),
   };
-  const memory = new UserMemoryService({ repository: () => repo, now: () => new Date(time) });
+  const audit: MemoryAuditRecord[] = [];
+  const auditPort: MemoryAuditPort = {
+    put: async record => { audit.push(record); },
+    findByRequestId: async (userId, requestId) =>
+      audit.find(r => r.userId === userId && r.requestId === requestId) ?? null,
+    history: async (userId, query) => {
+      const before = query.cursor ? Number(query.cursor) : Infinity;
+      const rows = audit.filter(r => r.userId === userId && r.memoryRevision < before)
+        .sort((a, b) => b.memoryRevision - a.memoryRevision);
+      const items = rows.slice(0, query.limit);
+      return { items, cursorRevision: before === Infinity ? null : before,
+        nextCursor: rows.length > query.limit ? String(items.at(-1)!.memoryRevision) : null };
+    },
+    prune: async () => undefined,
+  };
+  const memory = new UserMemoryService({ repository: () => repo, now: () => new Date(time),
+    audit: () => auditPort, auditRetryMs: 0 });
   const fetcher = vi.fn<typeof fetch>(async () => {
     const content = JSON.stringify({ changed: true, changeSummary: 'Updated preferences',
       sections: { ...empty, identity: 'Dog: Beans.', preferences: 'Concise.' } });
@@ -90,7 +108,7 @@ async function fixture(wired = true) {
   });
   await app.init();
   const http = request(app.getHttpServer());
-  return { app, http, repo, fetcher };
+  return { app, http, repo, fetcher, memory, audit };
 }
 
 function expectPrivate(headers: Record<string, unknown>): void {
@@ -209,6 +227,61 @@ it('uses closed 503 responses for missing composition, storage, or writer failur
       .send({ ...revision(1), instruction: 'Remember work' }).expect(503);
     expect(writer.body.error.code).toBe('MEMORY_WRITER_UNAVAILABLE');
     expect(JSON.stringify(writer.body)).not.toContain('raw provider fixture message');
+  } finally {
+    await app.close();
+  }
+});
+
+it('edits and clears one section by key with idempotent retries and a content-free history', async () => {
+  const { app, http, repo, fetcher, memory, audit } = await fixture();
+  try {
+    const patch = (key: string, body: unknown, who = 'alice') =>
+      http.patch(`${path}/sections/${key}`).set('Cookie', cookie(who)).set('Origin', origin).send(body);
+    const edited = await patch('work', { ...revision(1), requestId: 'req-1', text: 'Builds Aurvin.' }).expect(200);
+    expectPrivate(edited.headers);
+    expect(userMemoryResponseSchema.parse(edited.body)).toMatchObject({
+      revision: 2, sections: { identity: 'Dog: Beans.', work: 'Builds Aurvin.' } });
+    const retried = await patch('work', { ...revision(1), requestId: 'req-1', text: 'Builds Aurvin.' }).expect(200);
+    expect(retried.body).toEqual(edited.body);
+    expect(repo.compareAndSwap).toHaveBeenCalledTimes(1);
+    await patch('work', { ...revision(1), requestId: 'req-2', text: 'Other.' }).expect(409);
+    const cleared = await patch('identity', { ...revision(2), requestId: 'req-3', text: '' }).expect(200);
+    expect(cleared.body).toMatchObject({ revision: 3, sections: { ...empty, work: 'Builds Aurvin.' } });
+    await memory.drainAudit();
+    const history = await http.get(`${path}/history?limit=1`).set('Cookie', cookie('alice')).expect(200);
+    expectPrivate(history.headers);
+    const first = userMemoryHistoryResponseSchema.parse(history.body);
+    expect(first.items).toMatchObject([{ memoryRevision: 3, action: 'clear-section', source: 'user-ui', sections: ['identity'] }]);
+    expect(first.nextCursor).not.toBeNull();
+    const second = await http.get(`${path}/history?limit=5&cursor=${first.nextCursor}`).set('Cookie', cookie('alice')).expect(200);
+    expect(second.body.items).toMatchObject([{ memoryRevision: 2, action: 'edit-section', sections: ['work'] }]);
+    expect(JSON.stringify([history.body, second.body])).not.toMatch(/Beans|Aurvin|requestId|userId/);
+    const bob = await http.get(`${path}/history`).set('Cookie', cookie('bob')).expect(200);
+    expect(bob.body).toEqual({ protocolVersion: 1, items: [], nextCursor: null, gaps: [] });
+    expect(audit).toHaveLength(2);
+    expect(fetcher).not.toHaveBeenCalled();
+  } finally {
+    await app.close();
+  }
+});
+
+it('validates section keys, bodies, history queries and identity overrides before storage work', async () => {
+  const { app, http, repo } = await fixture();
+  try {
+    const patch = (key: string) => http.patch(`${path}/sections/${key}`).set('Cookie', cookie('alice')).set('Origin', origin);
+    const good = { ...revision(1), requestId: 'req-x', text: 'Fine.' };
+    await patch('bogus').send(good).expect(400);
+    await patch('work').send({ ...good, userId: 'bob' }).expect(400);
+    await patch('work').send({ ...revision(1), text: 'Fine.' }).expect(400); // requestId required
+    await patch('work').send({ ...good, text: 'x'.repeat(5001) }).expect(400);
+    const secret = await patch('work').send({ ...good, text: 'sk-or-v1-fixture' }).expect(400);
+    expect(JSON.stringify(secret.body)).not.toContain('sk-or');
+    await patch('work').send({ ...good, text: 'a\u0000b' }).expect(400);
+    for (const query of ['limit=51', 'limit=0', 'limit=x', 'userId=bob', 'cursor=!!']) {
+      await http.get(`${path}/history?${query}`).set('Cookie', cookie('alice')).expect(400);
+    }
+    expect(repo.compareAndSwap).not.toHaveBeenCalled();
+    await http.patch(`${path}/sections/work`).set('Origin', origin).send(good).expect(401);
   } finally {
     await app.close();
   }

@@ -22,7 +22,7 @@
  * ============================================================================
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { flushSync } from 'react-dom';
 import type { AuthUser } from '../../api/auth-protocol.ts';
 import type { CanvasControlArguments } from '../../api/voice-protocol.ts';
@@ -38,7 +38,6 @@ import { THEME_PREFERENCES } from '../../app/theme/theme.ts';
 import { Transcript } from '../../components/Transcript.tsx';
 import {
   CANVAS_TRANSITION_MS,
-  CanvasPanel,
   calendarViewArtifact,
   claimCalendarAutoOpenId,
   claimNewAutoOpenArtifactId,
@@ -56,6 +55,8 @@ import {
   type CanvasPanelHandle,
   type WeatherWorkspace,
 } from '../canvas/index.ts';
+import { lazyComponent, LazyBoundary } from '../../app/lazy.tsx';
+import type { CanvasPanel as CanvasPanelType } from '../canvas/CanvasPanel.tsx';
 import { CalendarTurnRegion } from '../plugins/google-calendar/index.ts';
 import { restoreLiveDraftFocus } from '../voice/live/live-voice-lifecycle.ts';
 import { LiveVoicePanel } from '../voice/live/LiveVoicePanel.tsx';
@@ -65,6 +66,9 @@ import { useChat } from './state/chat-context.tsx';
 import { canToggleTemporaryChat, describeTurnError } from './state/chat-reducer.ts';
 import type { ChatState } from './state/chat-types.ts';
 
+/** Canvas panel (renderers, calendar/weather views) loads on first open, not with the chat shell. */
+export const LazyCanvasPanel = lazyComponent<ComponentProps<typeof CanvasPanelType>>(() =>
+  import('../canvas/CanvasPanel.tsx').then((m) => ({ default: m.CanvasPanel })));
 const NOTICE_TIMEOUT_MS = 6_000;
 const EMPTY_CALENDAR_WORKSPACES: readonly CalendarWorkspace[] = [];
 const EMPTY_WEATHER_WORKSPACES: readonly WeatherWorkspace[] = [];
@@ -478,7 +482,7 @@ export function ChatView(props: {
   const paletteItems = useMemo<PaletteItem[]>(() => {
     if (!paletteOpen) return [];
     const navItems = shellNavItems(
-      { onManageAurvin: props.onManageAurvin, onOpenIntegrations: props.onOpenCalendarSetup },
+      { onManageAurvin: props.onManageAurvin, onOpenIntegrations: props.onOpenCalendarSetup, onOpenMemory: props.onOpenMemorySettings },
       props.user?.role,
     );
     const items: PaletteItem[] = [
@@ -500,7 +504,7 @@ export function ChatView(props: {
       })) : []),
     ];
     return items;
-  }, [paletteOpen, startNewChat, props.onManageAurvin, props.onOpenCalendarSetup, props.user?.role,
+  }, [paletteOpen, startNewChat, props.onManageAurvin, props.onOpenCalendarSetup, props.onOpenMemorySettings, props.user?.role,
     state.sessions, actions, theme]);
 
   const renderedCanvas = showCanvasPanel
@@ -578,6 +582,7 @@ export function ChatView(props: {
         onNewChat={startNewChat}
         onManageAurvin={props.onManageAurvin}
         onOpenIntegrations={props.onOpenCalendarSetup}
+        onOpenMemory={props.onOpenMemorySettings}
         onOpenCommandPalette={openCommandPalette}
         user={props.user}
         onSignOut={props.onSignOut}
@@ -741,7 +746,7 @@ export function ChatView(props: {
       </main>
 
       {renderedCanvas ? (
-        <CanvasPanel
+        <LazyBoundary label="Canvas"><LazyCanvasPanel
           artifacts={renderedCanvas.artifacts}
           activeArtifactId={renderedCanvas.activeArtifactId}
           transitionState={renderedCanvas.transitionState}
@@ -786,7 +791,7 @@ export function ChatView(props: {
           }
           liveVoiceActive={liveActive}
           onOpenPersonalization={!liveActive ? props.onManageAurvin : undefined}
-        />
+        /></LazyBoundary>
       ) : null}
 
       <CommandPalette open={paletteOpen && visible} items={paletteItems} onClose={closeCommandPalette} />

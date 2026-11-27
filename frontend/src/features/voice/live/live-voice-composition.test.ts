@@ -95,7 +95,7 @@ function composeLive(scene: Rtc, bindings?: LiveVoiceBindings) {
 
 it('composes live without constructing the dictation PCM path', () => {
   const source = readFileSync(new URL('../state/useLiveVoice.ts', import.meta.url), 'utf8');
-  expect(source).toContain('new LiveKitVoiceClient(');
+  expect(source).toContain('createLazyLiveKitClient(');
   expect(source).not.toContain('new VoiceClient(');
   expect(source).not.toContain('new AudioCaptureService(');
   expect(source).not.toContain('new AudioPlaybackService(');

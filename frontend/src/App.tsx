@@ -19,7 +19,7 @@
  * ============================================================================
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type MutableRefObject } from 'react'
 import { createAdminConfigClient, type AdminConfigClient } from './api/admin-config-client.ts'
 import { createAdministrationClient, type AdministrationClient } from './api/administration-client.ts'
 import type { AuthClient } from './api/auth-client.ts'
@@ -36,7 +36,8 @@ import {
   type WebSearchOAuthOutcome,
 } from './api/web-search-protocol.ts'
 import { clearAllSubmissionRecovery } from './api/client.ts'
-import { AdminDashboard, type DashboardSection } from './features/admin-config/AdminDashboard.tsx'
+import type { AdminDashboard as AdminDashboardType, DashboardSection } from './features/admin-config/AdminDashboard.tsx'
+import { lazyComponent, LazyBoundary } from './app/lazy.tsx'
 import {
   AuthProvider,
   ForgotPasswordForm,
@@ -53,6 +54,10 @@ import { refreshVoiceCapabilities } from './features/voice/index.ts'
 import { useLiveVoice } from './features/voice/state/useLiveVoice.ts'
 import { ThemeProvider } from './app/theme/ThemeProvider.tsx'
 import './App.css'
+
+/** Admin dashboard (settings, analytics, personalization) loads when first opened. */
+export const LazyAdminDashboard = lazyComponent<ComponentProps<typeof AdminDashboardType>>(() =>
+  import('./features/admin-config/AdminDashboard.tsx').then((m) => ({ default: m.AdminDashboard })))
 
 export function bindLiveConversation(
   actions: {
@@ -246,7 +251,7 @@ function VoiceChatShell({
         />
       </div>
       {page === 'admin' ? (
-        <AdminDashboard
+        <LazyBoundary label="Settings"><LazyAdminDashboard
           client={adminClient}
           calendarClient={calendarClient}
           webSearchClient={webSearchClient}
@@ -267,7 +272,7 @@ function VoiceChatShell({
             setAdminFocusTarget(null)
             setPage('chat')
           }}
-        />
+        /></LazyBoundary>
       ) : null}
     </>
   )

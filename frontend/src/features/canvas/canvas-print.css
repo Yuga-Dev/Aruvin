@@ -1,0 +1,15 @@
+/* Canvas print isolation (see printCanvasElement in canvas-export.ts) and export notice. */
+#aurvin-print-root { display: none; }
+
+@media print {
+  @page { margin: 12mm; }
+  html[data-aurvin-printing] body > *:not(#aurvin-print-root) { display: none !important; }
+  html[data-aurvin-printing],
+  html[data-aurvin-printing] body { height: auto !important; overflow: visible !important; background: #fff !important; }
+  html[data-aurvin-printing] #aurvin-print-root { display: block; color: #000; background: #fff; }
+  #aurvin-print-root h1 { margin: 0 0 8pt; font-size: 14pt; }
+  #aurvin-print-root * { overflow: visible !important; max-height: none !important; }
+  #aurvin-print-root svg { max-width: 100%; height: auto; }
+}
+
+.aurvin-canvas-export-notice { font-size: 0.75rem; color: var(--aurvin-danger); }

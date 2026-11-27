@@ -4,7 +4,8 @@
  * LOCATION: backend/src/chat-runtime/user-memory-scheduler.ts
  * PURPOSE: Batch eligible finalized chat turns off the model and transport paths.
  * ROLE IN PROJECT: Coordinates the shared writer and independent session watermark.
- * KEY COMPONENTS: Bounded per-session queue, idle timer, projection and cancellation.
+ * KEY COMPONENTS: Bounded per-session queue, idle timer, projection, cancellation, and
+ * userChanged (drop queued turns after a user edit or delete, keep the watermark).
  * ============================================================================
  */
 import { hasDisallowedControlChars, hasSecretPattern } from '../contracts/personalization.js';
@@ -29,6 +30,8 @@ type Options = {
   publish(userId: string, sessionId: string, last: PassiveTurn, changed: boolean,
     signal: AbortSignal, mark?: PassiveTurn): Promise<void>;
   report?: DiagnosticSink;
+  /** Subscribe to confirmed user-initiated memory changes (UserMemoryService.onUserChange). */
+  userChanges?: (listener: (userId: string) => void) => () => void;
 };
 
 const safe = (text: string) => !hasDisallowedControlChars(text) && !hasSecretPattern(text);
@@ -45,7 +48,10 @@ function project(turn: PassiveTurn): MemoryWriterDeltaMessage[] {
 export class UserMemoryScheduler {
   private readonly slots = new Map<string, Slot>();
   private closed = false;
-  constructor(private readonly options: Options) {}
+  private readonly unsubscribe?: () => void;
+  constructor(private readonly options: Options) {
+    this.unsubscribe = options.userChanges?.(userId => this.userChanged(userId));
+  }
   private key(u: string, s: string) { return JSON.stringify([u, s]); }
 
   // Callers supply only trusted, successful non-Dev, non-temporary turns.
@@ -55,6 +61,8 @@ export class UserMemoryScheduler {
     const key = this.key(u, s);
     let slot = this.slots.get(key);
     if (!slot && turn.sequence > watermark) {
+      if (this.slots.size >= MAX_SESSIONS) // Slots emptied by userChanged are dormant, not work.
+        for (const idle of this.slots.values()) if (!idle.queue.length && !idle.running) this.cancel(idle.userId, idle.sessionId);
       if (this.slots.size >= MAX_SESSIONS) {
         diagnose(this.options.report, { stage: 'runtime-error', state: 'skipped', code: 'CONCURRENCY_LIMIT' });
         return;
@@ -92,11 +100,29 @@ export class UserMemoryScheduler {
     clearTimeout(slot.wake);
     slot.abort.abort();
   }
+  // A user edit or delete: queued and in-flight passive batches could re-learn a fact the user
+  // just removed. Drop them and keep each slot's `seen` watermark so those turns are not replayed;
+  // facts the user states again in later turns are learned again.
+  userChanged(u: string): void {
+    for (const slot of this.slots.values()) {
+      if (slot.userId !== u) continue;
+      clearTimeout(slot.wake);
+      slot.wake = undefined;
+      slot.abort.abort();
+      slot.abort = new AbortController();
+      slot.queue = [];
+      slot.batch = undefined;
+      slot.overflowed = false;
+      slot.urgent = false;
+      slot.failures = 0;
+    }
+  }
   deactivate(u: string): void {
     for (const slot of [...this.slots.values()]) if (slot.userId === u) this.cancel(u, slot.sessionId);
   }
   close(): void {
     this.closed = true;
+    this.unsubscribe?.();
     for (const slot of [...this.slots.values()]) this.cancel(slot.userId, slot.sessionId);
   }
 
@@ -142,10 +168,11 @@ export class UserMemoryScheduler {
         code: batch.changed === undefined ? 'PROVIDER_ERROR' : 'PERSISTENCE_ERROR' });
     } finally {
       slot.running = false;
-      if (!signal.aborted && slot.queue.length)
+      const live = !slot.abort.signal.aborted;
+      if (live && slot.queue.length)
         this.arm(slot, slot.failures ? USER_MEMORY_IDLE_MS : (slot.urgent || slot.queue.length >= BATCH)
           ? 0 : Math.max(0, slot.idleAt - Date.now()));
-      else if (!signal.aborted && !slot.overflowed) this.slots.delete(this.key(userId, sessionId));
+      else if (live && !slot.overflowed) this.slots.delete(this.key(userId, sessionId));
     }
   }
 }

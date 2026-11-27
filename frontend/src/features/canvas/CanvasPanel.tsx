@@ -23,6 +23,7 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState,
   type Dispatch, type Ref, type SetStateAction } from 'react';
 import type { CalendarConfirmPayload, CanvasControlArguments } from '../../api/voice-protocol.ts';
+import { FEATURE_FLAGS } from '../../app/feature-flags.ts';
 import {
   computeWheelZoomView,
   forcedChartKindFromSubType,
@@ -37,6 +38,15 @@ import {
   stepCanvasZoom,
   type CanvasView,
 } from './canvas-controls.ts';
+import {
+  canvasExportAvailability,
+  canvasFileStem,
+  classifyPngError,
+  exportSvgToPng,
+  pngExportMessage,
+  printCanvasElement,
+} from './canvas-export.ts';
+import './canvas-print.css';
 import { matchesCanvasArtifact } from './weather-workspace.ts';
 import { ArtifactKindIcon } from './CanvasArtifactCard.tsx';
 import type { CanvasArtifact } from './canvas-types.ts';
@@ -143,6 +153,9 @@ export function CanvasPanel({
   const maximized = maximizedProp ?? localMaximized;
   const setMaximized = onMaximizedChange ?? setLocalMaximized;
   const [copied, setCopied] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [transparentPng, setTransparentPng] = useState(false);
 
   const dragOriginRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(
     null,
@@ -264,6 +277,48 @@ export function CanvasPanel({
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const exportControls = canvasExportAvailability({
+    flagOn: FEATURE_FLAGS.canvasExportPrint,
+    structuredMode,
+    viewMode,
+  });
+
+  const handleExportPng = async () => {
+    const svgEl = stageRef.current?.querySelector('svg') ?? null;
+    if (!svgEl || exportBusy) return;
+    setExportBusy(true);
+    setExportNotice(null);
+    try {
+      const blob = await exportSvgToPng(svgEl, { background: transparentPng ? 'transparent' : 'theme' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${canvasFileStem(activeArtifact.title)}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setExportNotice(pngExportMessage(classifyPngError(error).code));
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  const handlePrint = () => {
+    // Diagrams print the live SVG; structured views and code print their scroll body.
+    const source =
+      !structuredMode && viewMode === 'preview'
+        ? stageRef.current?.querySelector('svg') ?? null
+        : bodyRef.current;
+    if (!source) {
+      setExportNotice('There is nothing to print yet.');
+      return;
+    }
+    setExportNotice(null);
+    printCanvasElement(source, activeArtifact.title);
   };
 
   const artifactPath = toArtifactPath(activeArtifact);
@@ -481,7 +536,49 @@ export function CanvasPanel({
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
           </button>
+          {exportControls.png ? (
+            <>
+              <button
+                type="button"
+                className="aurvin-canvas-icon-btn"
+                aria-label="Export as PNG"
+                title="Export as PNG"
+                onClick={() => void handleExportPng()}
+                disabled={exportBusy}
+              >
+                PNG
+              </button>
+              <button
+                type="button"
+                className="aurvin-canvas-icon-btn"
+                aria-label="Transparent PNG background"
+                aria-pressed={transparentPng}
+                title="Transparent PNG background"
+                onClick={() => setTransparentPng((value) => !value)}
+              >
+                Transparent
+              </button>
             </>
+          ) : null}
+            </>
+          ) : null}
+          {exportControls.print ? (
+            <button
+              type="button"
+              className="aurvin-canvas-icon-btn"
+              aria-label="Print artifact"
+              title="Print artifact"
+              onClick={handlePrint}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <polyline points="6 9 6 2 18 2 18 9" />
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                <rect x="6" y="14" width="12" height="8" />
+              </svg>
+            </button>
+          ) : null}
+          {exportNotice ? (
+            <span className="aurvin-canvas-export-notice" role="alert">{exportNotice}</span>
           ) : null}
         </div>
       </div>

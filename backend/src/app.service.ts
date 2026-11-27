@@ -100,6 +100,7 @@ import { ReferencedContextAssembler } from './context/index.js';
 import { loadModelLimits, type ModelLimits } from './model/index.js';
 import { evaluateMemoryModel, readModelCatalogue } from './model/catalogue.js';
 import { UserMemoryService } from './personalization/user-memory.service.js';
+import { memoryAuditFor } from './persistence/memory-audit.js';
 import { MemoryWriterService, type MemoryWriterConfig } from './personalization/memory-writer.js';
 import { calendarEvidenceFor } from './model/calendar-evidence.js';
 import type { CalendarCatalogueEvidence } from './model/catalogue.js';
@@ -457,7 +458,7 @@ export class AppService {
       repository: () => this.persistence?.personalization ?? null,
       fetcher: this.ports.fetcher,
     });
-    this.userMemory = new UserMemoryService({ repository: () => {
+    this.userMemory = new UserMemoryService({ audit: () => this.configClosing ? null : memoryAuditFor(this.persistence), repository: () => {
       const p = this.persistence?.userMemory;
       if (this.configClosing || !p) return null;
       return {

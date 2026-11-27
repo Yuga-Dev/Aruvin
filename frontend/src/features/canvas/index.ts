@@ -64,7 +64,8 @@ export {
   weatherViewArtifact,
 } from './weather-workspace.ts';
 export type { WeatherWorkspace } from './weather-workspace.ts';
-export { CanvasPanel, toArtifactPath, type CanvasPanelHandle } from './CanvasPanel.tsx';
+// CanvasPanel and the renderers are deliberately not re-exported as values: they load lazily (see ChatView). Import them from their modules.
+export type { CanvasPanelHandle } from './CanvasPanel.tsx';
 export type {
   CalendarEventDateTime,
   CalendarEventModel,
@@ -77,8 +78,3 @@ export type {
   MermaidParsedModel,
   MermaidSequenceModel,
 } from './canvas-types.ts';
-export { CalendarEventRenderer } from './renderers/calendar-event-renderer.tsx';
-export { WeatherViewBoundary, WeatherViewRenderer } from './renderers/weather-view-renderer.tsx';
-export { ChartRenderer } from './renderers/chart-renderer.tsx';
-export { MermaidRenderer } from './renderers/mermaid-renderer.tsx';
-export { SvgRenderer } from './renderers/svg-renderer.tsx';

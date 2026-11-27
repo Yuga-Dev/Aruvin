@@ -19,8 +19,14 @@
 
 import { utf8ByteLength } from './personalization-protocol.ts';
 import {
+  isMemoryHistoryResponse,
   isUserMemoryEditResponse,
   isUserMemoryErrorBody,
+  USER_MEMORY_HISTORY_MAX_LIMIT,
+  USER_MEMORY_SECTION_KEYS,
+  type MemoryHistoryResponse,
+  type UserMemorySectionKey,
+  type UserMemorySectionRequest,
   isUserMemoryResponse,
   MAX_USER_MEMORY_BODY_BYTES,
   USER_MEMORY_PROTOCOL_VERSION,
@@ -74,6 +80,16 @@ export type UserMemoryClient = {
   setEnabled(request: UserMemoryEnabledRequest, signal?: AbortSignal): Promise<UserMemoryResponse>;
   edit(request: UserMemoryEditRequest, signal?: AbortSignal): Promise<UserMemoryEditResponse>;
   clear(request: UserMemoryClearRequest, signal?: AbortSignal): Promise<UserMemoryResponse>;
+  /** PATCH /sections/:key (Release 5). Empty text clears the section. */
+  editSection(
+    key: UserMemorySectionKey,
+    request: UserMemorySectionRequest,
+    signal?: AbortSignal,
+  ): Promise<UserMemoryResponse>;
+  history(
+    options?: { cursor?: string | null; limit?: number },
+    signal?: AbortSignal,
+  ): Promise<MemoryHistoryResponse>;
 };
 
 function readViteApiBase(): string | undefined {
@@ -135,6 +151,25 @@ function assertClearRequest(request: UserMemoryClearRequest): UserMemoryClearReq
     protocolVersion: USER_MEMORY_PROTOCOL_VERSION,
     expectedRevision,
   };
+}
+
+function assertSectionRequest(
+  key: UserMemorySectionKey,
+  request: UserMemorySectionRequest,
+): UserMemorySectionRequest {
+  if (!USER_MEMORY_SECTION_KEYS.includes(key)) invalidRequest();
+  const expectedRevision = assertBaseRequest(request);
+  if (typeof request.text !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(request.requestId ?? '')) {
+    invalidRequest();
+  }
+  const body: UserMemorySectionRequest = {
+    protocolVersion: USER_MEMORY_PROTOCOL_VERSION,
+    expectedRevision,
+    requestId: request.requestId,
+    text: request.text,
+  };
+  if (utf8ByteLength(JSON.stringify(body)) > MAX_USER_MEMORY_BODY_BYTES) invalidRequest();
+  return body;
 }
 
 async function readBoundedJson(response: Response): Promise<unknown> {
@@ -297,6 +332,29 @@ export function createUserMemoryClient(options?: {
         JSON.stringify(validated),
         signal,
         isUserMemoryEditResponse,
+      );
+    },
+    async editSection(key, sectionRequest, signal) {
+      const validated = assertSectionRequest(key, sectionRequest);
+      return request(
+        'PATCH',
+        USER_MEMORY_ROUTES.section(key),
+        JSON.stringify(validated),
+        signal,
+        isUserMemoryResponse,
+      );
+    },
+    async history(options, signal) {
+      const params = new URLSearchParams();
+      if (options?.cursor) params.set('cursor', options.cursor);
+      const limit = Math.min(options?.limit ?? USER_MEMORY_HISTORY_MAX_LIMIT, USER_MEMORY_HISTORY_MAX_LIMIT);
+      params.set('limit', String(Math.max(1, Math.trunc(limit))));
+      return request(
+        'GET',
+        `${USER_MEMORY_ROUTES.history}?${params.toString()}`,
+        undefined,
+        signal,
+        isMemoryHistoryResponse,
       );
     },
     async clear(clearRequest, signal) {

@@ -35,7 +35,7 @@ export type MemoryWriterConfig = Pick<RuntimeConfigSnapshot,
 export type MemoryWriterDeltaMessage = { role: 'user' | 'assistant'; content: string };
 export type MemoryWriterScope = { sessionId: string; turnId: string; signal?: AbortSignal };
 export type MemoryInstructionOptions =
-  | { source: 'composer'; expectedRevision: number; signal?: AbortSignal }
+  | { source: 'composer'; expectedRevision: number; requestId?: string; signal?: AbortSignal }
   | ({ source: 'tool' } & MemoryWriterScope);
 export type MemoryWriterServiceOptions = {
   memory: UserMemoryService;
@@ -73,12 +73,17 @@ export class MemoryWriterService {
     const source = { instruction: normalizeCustomInstructions(parsed.data.instruction) };
     return this.options.memory.applyEdit(userId, {
       expectedRevision: tool ? undefined : options.expectedRevision, requireEnabled: tool, signal: options.signal,
+      ...(options.source === 'composer' ? { requestId: options.requestId } : {}),
+      audit: options.source === 'tool'
+        ? { action: 'tool', source: 'tool', origin: { sessionId: options.sessionId, turnId: options.turnId } }
+        : { action: 'instruction', source: 'composer' },
     }, (sections, signal) => this.generate(userId, sections, source, tool ? options : undefined, signal));
   }
 
   synthesize(userId: string, delta: readonly MemoryWriterDeltaMessage[], scope: MemoryWriterScope):
     Promise<UserMemoryEditResult> {
-    return this.options.memory.applyEdit(userId, { requireEnabled: true, signal: scope.signal },
+    return this.options.memory.applyEdit(userId, { requireEnabled: true, signal: scope.signal,
+      audit: { action: 'passive', source: 'passive', origin: { sessionId: scope.sessionId, turnId: scope.turnId } } },
       (sections, signal) => this.generate(userId, sections, { delta }, scope, signal));
   }
 

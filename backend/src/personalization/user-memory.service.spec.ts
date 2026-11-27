@@ -9,7 +9,8 @@
  */
 import { expect, it, vi } from 'vitest';
 import type { UserMemoryRepository } from '../contracts/repositories.js';
-import type { StoredUserMemory } from '../contracts/user-memory.js';
+import type { MemoryAuditRecord, StoredUserMemory } from '../contracts/user-memory.js';
+import type { MemoryAuditPort } from '../persistence/memory-audit.js';
 import { UserMemoryService } from './user-memory.service.js';
 
 const time = '2026-11-20T12:00:00.000Z';
@@ -195,4 +196,138 @@ it('rejects a full per-user queue without dispatching another operation', async 
   release.resolve(undefined);
   await Promise.all(jobs);
   expect(repo.read).toHaveBeenCalledTimes(8);
+});
+
+function auditedFixture() {
+  const f = writableFixture();
+  const records: MemoryAuditRecord[] = [];
+  const port: MemoryAuditPort = {
+    put: async record => { records.push(record); },
+    findByRequestId: async (userId, requestId) =>
+      records.find(r => r.userId === userId && r.requestId === requestId) ?? null,
+    history: async () => ({ items: [...records].reverse(), nextCursor: null, cursorRevision: null }),
+    prune: async () => undefined,
+  };
+  const memory = new UserMemoryService({ repository: f.repository, audit: () => port, auditRetryMs: 0,
+    now: () => new Date(time) });
+  return { ...f, memory, records, port };
+}
+
+it('edits one section directly and publishes to RAM only after a confirmed write', async () => {
+  const { repo, memory, records } = auditedFixture();
+  await memory.warm('alice');
+  const held = deferred<void>(), entered = deferred<void>();
+  const save = repo.compareAndSwap.getMockImplementation()!;
+  repo.compareAndSwap.mockImplementationOnce(async (...args) => {
+    entered.resolve(undefined);
+    await held.promise;
+    return save(...args);
+  });
+  const edit = memory.editSection('alice', 1, 'work', 'Builds Aurvin.', 'req-1');
+  await entered.promise;
+  expect(memory.cachedMemory('alice')!.sections.work).toBe('');
+  expect(memory.cachedSnapshot('alice')!.revision).toBe(1);
+  held.resolve(undefined);
+  await expect(edit).resolves.toMatchObject({ revision: 2, sections: { identity: 'Dog: Beans.', work: 'Builds Aurvin.' } });
+  expect(memory.cachedSnapshot('alice')).toEqual({ revision: 2,
+    content: '- Identity: Dog: Beans.\n- Work: Builds Aurvin.' });
+  await memory.drainAudit();
+  expect(records).toMatchObject([{ memoryRevision: 2, action: 'edit-section', sections: ['work'], requestId: 'req-1' }]);
+});
+
+it('a failed or uncertain section edit leaves the RAM cache unchanged', async () => {
+  const { repo, memory, records } = auditedFixture();
+  await memory.warm('alice');
+  repo.compareAndSwap.mockResolvedValueOnce({ outcome: 'uncertain' });
+  await expect(memory.editSection('alice', 1, 'work', 'Builds Aurvin.')).rejects.toMatchObject({ code: 'PERSISTENCE_ERROR' });
+  repo.compareAndSwap.mockRejectedValueOnce(new Error('driver'));
+  await expect(memory.editSection('alice', 1, 'work', 'Builds Aurvin.')).rejects.toMatchObject({ code: 'PERSISTENCE_ERROR' });
+  expect(memory.cachedMemory('alice')).toMatchObject({ revision: 1, sections: { work: '' } });
+  expect(memory.cachedSnapshot('alice')?.content).toBe('- Identity: Dog: Beans.');
+  await memory.drainAudit();
+  expect(records).toEqual([]);
+});
+
+it('clearing one section keeps the other sections', async () => {
+  const { memory, rows, records } = auditedFixture();
+  rows.set('alice', { ...stored, sections: { ...stored.sections, work: 'Builds Aurvin.' } });
+  await expect(memory.clearSection('alice', 1, 'identity', 'req-c')).resolves.toMatchObject({
+    revision: 2, sections: { ...empty, work: 'Builds Aurvin.' } });
+  expect(memory.cachedSnapshot('alice')?.content).toBe('- Work: Builds Aurvin.');
+  await memory.drainAudit();
+  expect(records).toMatchObject([{ action: 'clear-section', sections: ['identity'], charsAfter: 22 }]);
+});
+
+it('direct edit rejects secrets and control characters', async () => {
+  const { repo, memory } = auditedFixture();
+  await memory.warm('alice');
+  await expect(memory.editSection('alice', 1, 'work', 'key: sk-or-v1-abcdefghijklmnopqrstuvwxyz0123456789'))
+    .rejects.toMatchObject({ code: 'INVALID_REQUEST', secretRejected: true });
+  await expect(memory.editSection('alice', 1, 'work', 'bad\u0000text'))
+    .rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+  expect(repo.compareAndSwap).not.toHaveBeenCalled();
+});
+
+it('direct edit over the rendered cap is rejected', async () => {
+  const { repo, memory } = auditedFixture();
+  await memory.warm('alice');
+  await expect(memory.editSection('alice', 1, 'work', 'x'.repeat(2500)))
+    .rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+  expect(repo.compareAndSwap).not.toHaveBeenCalled();
+  await expect(memory.editSection('alice', 1, 'work', 'x'.repeat(2400))).resolves.toMatchObject({ revision: 2 });
+});
+
+it('two tabs editing the same revision give one conflict and no lost update', async () => {
+  const { memory, rows } = auditedFixture();
+  const results = await Promise.allSettled([
+    memory.editSection('alice', 1, 'work', 'Tab one.', 'r-one'),
+    memory.editSection('alice', 1, 'preferences', 'Tab two.', 'r-two'),
+  ]);
+  expect(results.map(r => r.status)).toEqual(['fulfilled', 'rejected']);
+  expect((results[1] as PromiseRejectedResult).reason).toMatchObject({ code: 'MEMORY_CONFLICT', currentRevision: 2 });
+  expect(rows.get('alice')).toMatchObject({ revision: 2, sections: { work: 'Tab one.', preferences: '' } });
+});
+
+it('a retried request with the same requestId returns success without a second change', async () => {
+  const { repo, memory, rows } = auditedFixture();
+  const first = await memory.editSection('alice', 1, 'work', 'Builds Aurvin.', 'req-same');
+  const again = await memory.editSection('alice', 1, 'work', 'Builds Aurvin.', 'req-same'); // audit queued or saved
+  await memory.drainAudit();
+  const afterAudit = await memory.editSection('alice', 1, 'work', 'Builds Aurvin.', 'req-same');
+  expect(again).toEqual(first);
+  expect(afterAudit).toEqual(first);
+  expect(repo.compareAndSwap).toHaveBeenCalledTimes(1);
+  expect(rows.get('alice')!.revision).toBe(2);
+  await expect(memory.editSection('alice', 1, 'work', 'Other.', 'req-other'))
+    .rejects.toMatchObject({ code: 'MEMORY_CONFLICT', currentRevision: 2 });
+});
+
+it('a passive write racing a user edit never overwrites the user text', async () => {
+  const { memory, rows } = auditedFixture();
+  const begun = deferred<void>(), release = deferred<void>();
+  const passive = memory.applyEdit('alice', { requireEnabled: true,
+    audit: { action: 'passive', source: 'passive', origin: { sessionId: 's1', turnId: 't1' } } }, async sections => {
+    begun.resolve(undefined);
+    await release.promise;
+    return { changed: true, changeSummary: 'x', sections: { ...sections, work: 'Learned passively.' } };
+  });
+  await begun.promise;
+  const user = memory.editSection('alice', 1, 'identity', 'Dog: Mochi.', 'req-u');
+  release.resolve(undefined);
+  await passive;
+  await expect(user).rejects.toMatchObject({ code: 'MEMORY_CONFLICT', currentRevision: 2 });
+  const retry = await memory.editSection('alice', 2, 'identity', 'Dog: Mochi.', 'req-u2');
+  expect(retry.sections).toMatchObject({ identity: 'Dog: Mochi.', work: 'Learned passively.' });
+  expect(rows.get('alice')!.sections.identity).toBe('Dog: Mochi.');
+});
+
+it('notifies user-change listeners only for confirmed user-initiated changes', async () => {
+  const { memory } = auditedFixture();
+  const seen = vi.fn();
+  memory.onUserChange(seen);
+  await memory.applyEdit('alice', { requireEnabled: true, audit: { action: 'passive', source: 'passive' } },
+    async sections => ({ changed: true, changeSummary: '', sections: { ...sections, other: 'x' } }));
+  expect(seen).not.toHaveBeenCalled();
+  await memory.clearSection('alice', 2, 'other');
+  expect(seen).toHaveBeenCalledExactlyOnceWith('alice');
 });

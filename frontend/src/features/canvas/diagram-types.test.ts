@@ -22,7 +22,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { MermaidRenderer, parseMermaidSource } from './index.ts';
+import { parseMermaidSource } from './index.ts';
+import { MermaidRenderer } from './renderers/mermaid-renderer.tsx';
 import type { MermaidFlowModel } from './canvas-types.ts';
 
 const render = (source: string) => renderToStaticMarkup(createElement(MermaidRenderer, { source }));
