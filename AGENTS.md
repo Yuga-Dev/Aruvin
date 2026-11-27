@@ -5,14 +5,15 @@ These instructions apply throughout this repository. Follow the user's latest in
 ## Current status and sources
 
 - Root instructions and Phase 1 execution were approved on 6 October 2026 ("Everything is approved, you can proceed"), recorded in `docs/aurvin-phase-1/state.md`. The old awaiting-approval gate is closed; this does not authorize external provisioning, paid checks, or public deployment.
-- The state records P1–P9 workers complete and all ten plans committed. P10 integrated verification is in progress; final verification/report remain pending. The recorded assembled smoke passed on isolated standalone MongoDB, with a replica-set limitation; it is not topology or Azure certification.
+- P1–P10 are complete. Final verification ([final_report.md](docs/aurvin-phase-1/final_report.md), 7 October 2026) is **COMPLETE-WITH-BLOCKS**: AC16 (Azure compatibility) and AC18 (operations/restore) are blocked on external inputs, live/topology/restore drills were not run, and review was skipped. The assembled smoke passed on isolated standalone MongoDB only; it is not topology or Azure certification.
+- Post-Phase-1 work is tracked in [docs/roadmap/](docs/roadmap/) (release plan and feature status) and per-feature folders under `docs/`.
 - Some preparation-era paragraphs in `state.md` still describe the old approval/scaffold state. Use its dated approval evidence, dependency status, and current gate alongside actual source/configuration and reported commits; reconcile stale records when advancing the workflow.
 
 - `README.md`: local setup, admitted topology, startup modes, and check prerequisites.
 - `docs/aurvin-phase-1/goal.md`: approved Phase 1 boundaries and acceptance criteria.
 - `docs/aurvin-phase-1/state.md`: execution index, ownership, dependencies, and commit/status records.
 - `docs/aurvin-phase-1/research.md`, `plan1.md` through `plan10.md`: compatibility findings and committed implementation plans.
-- `docs/aurvin-phase-1/operations.md`, `staging-evidence.md`: operational procedures and actual/unrun drill evidence. `verification.md` and `final_report.md` are not yet present; do not claim final verification is complete.
+- `docs/aurvin-phase-1/operations.md`, `staging-evidence.md`: operational procedures and actual/unrun drill evidence. `verification.md`, `final_report.md`: Phase 1 acceptance evidence and the COMPLETE-WITH-BLOCKS verdict; do not claim the blocked items are verified.
 
 ## Workflow constraints
 

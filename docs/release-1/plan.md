@@ -1,6 +1,6 @@
 # Release 1 plan: Modern conversation
 
-**Status:** Planned. Not started; implementation waits for your reading of this plan and the decisions in section 9. **Branch:** `codex/release-1-plan` (planning only). **Based on:** main `5ec75ee`, after Release 0 ([release-0](../releases/release-0.md)).
+**Status:** Decisions accepted 27 November 2026 (section 9). Unit 0 starts after the Task mode Phase A branch merges (section 3). **Branch:** planning merged from `codex/release-1-plan`. **Based on:** main `5ec75ee`, after Release 0 ([release-0](../releases/release-0.md)).
 
 Work order follows [release-plan.md](../roadmap/release-plan.md): contracts, backend, database and indexes, API and events, frontend, states, security, tests, docs, verification. Capabilities stay behind `frontend/src/app/feature-flags.ts` until release verification passes. Current status of everything else is in [feature-status.md](../roadmap/feature-status.md).
 
@@ -186,7 +186,9 @@ Frontend (`src/**/*.test.ts`, Node environment):
 - `MessageItem.test.ts` additions: `shows edit, regenerate and feedback only for eligible messages`; `hides all three for live voice messages`.
 - Integration (Unit 9): `regenerate then export shows only the latest version`; `search result opens the matching chat`.
 
-## 9. Open decisions for you
+## 9. Decisions
+
+**Accepted 27 November 2026:** the user accepted every recommendation below (D1–D8) as written. Implementation follows them.
 
 | # | Decision | Options | Recommendation |
 | --- | --- | --- | --- |

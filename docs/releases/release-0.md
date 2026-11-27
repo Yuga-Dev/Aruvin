@@ -1,6 +1,6 @@
 # Release 0: Foundation and design system
 
-**Status:** Tested. Awaiting approval. Not production verified. **Date:** 16 November 2026. **Branch:** none (the repository has no commits yet).
+**Status:** Tested. **Approved by the user on 27 November 2026.** Not production verified. **Date:** 16 November 2026. **Branch:** none (the repository has no commits yet).
 
 ## What changed for users
 

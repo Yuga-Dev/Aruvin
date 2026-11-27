@@ -4,9 +4,9 @@ Each release ships one complete, user-facing slice. A release starts only after 
 
 | Release | Scope | Status |
 | --- | --- | --- |
-| **0. Foundation and design system** | Repository audit, Aurvin branding, design tokens, light/dark/system themes, flag-aware sidebar navigation, command palette, design-system primitives | Tested. Awaiting your approval. See [release-0](../releases/release-0.md). |
-| 1. Modern conversation | Conversation search (server-side, titles + message text), edit and regenerate, feedback, Markdown export, message rendering polish. *Streaming, cancel and retry already exist; this release keeps them working.* | Planned |
-| 2. Canvas and workspace panel | Generalise Canvas into the right-hand workspace panel (resizable, full screen), PNG export, print, "Ask about this", data tables with sort and filter, more diagram types, calendar day/week views | Planned |
+| **0. Foundation and design system** | Repository audit, Aurvin branding, design tokens, light/dark/system themes, flag-aware sidebar navigation, command palette, design-system primitives | Tested. Approved 27 November 2026. See [release-0](../releases/release-0.md). |
+| 1. Modern conversation | Conversation search (server-side, titles + message text), edit and regenerate, feedback, Markdown export, message rendering polish. *Streaming, cancel and retry already exist; this release keeps them working.* | Planned and decisions accepted 27 November 2026 ([plan](../release-1/plan.md)); Unit 0 queued behind the Task mode merge |
+| 2. Canvas and workspace panel | Generalise Canvas into the right-hand workspace panel (resizable, full screen), PNG export, print, "Ask about this", data tables with sort and filter, more diagram types, calendar day/week views | Partly pulled forward (user decision, 27 November 2026): bundle code-splitting, PNG export, print, more diagram types, calendar day/week views and data tables, behind flags where user-visible. Workspace panel and "Ask about this" wait for Release 1. |
 | 3. Agent execution | Versioned agent event contract, task plan and timeline, tool activity, approval cards enforced by backend policy, cancellation, execution history, general tool registry | Planned |
 | 4. Voice and multimodal | Voice UI refresh, phone voice UX, file and image uploads with validation and limits | Planned |
 | 5. Projects and memory | Projects (ownership, instructions, context), memory inspection, editing and deletion with audit | Planned |
